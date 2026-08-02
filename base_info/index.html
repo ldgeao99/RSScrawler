@@ -32,15 +32,15 @@
 <body class="bg-slate-950 text-slate-100 font-sans h-screen w-screen flex flex-col overflow-hidden">
 
     <!-- 상단 간결한 헤더 (동기화 완료 배지 상단 매핑 완료) -->
-    <header class="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center shrink-0">
+    <header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-3 lg:py-4 flex flex-col lg:flex-row gap-2 lg:gap-0 lg:justify-between lg:items-center shrink-0">
         <div class="flex items-center gap-3 flex-1 min-w-0">
             <span class="text-xl">🎯</span>
-            <h1 class="text-base font-extrabold tracking-wide text-white flex items-center gap-2 shrink-0">
+            <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex items-center gap-2 shrink-0">
                 실시간 뉴스 시그널 감시센터
                 <span class="text-[10px] bg-slate-800 text-blue-400 px-2.5 py-0.5 rounded-full border border-slate-700 font-normal">Active</span>
             </h1>
             <!-- 🟢 [요청사항 반영] 동기화 타임 배지가 상단 헤더 영역으로 깔끔하게 이동했습니다 -->
-            <span id="time-badge" class="font-mono text-[11px] text-slate-500 font-bold tracking-tight truncate border-l border-slate-800 pl-3 ml-2 transition-all duration-200">
+            <span id="time-badge" class="hidden lg:inline font-mono text-[11px] text-slate-500 font-bold tracking-tight truncate border-l border-slate-800 pl-3 ml-2 transition-all duration-200">
                 동기화 대기 중...
             </span>
             <!-- 채널별 전용 감시 모드일 때 보여줄 배지 -->
@@ -49,25 +49,27 @@
                 <a href="/" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-black transition-colors">전체보기</a>
             </div>
         </div>
-        <div class="flex items-center gap-3 shrink-0">
-            <a href="/trash-view" target="_blank" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/40 text-xs text-rose-300 px-4 py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5">
+        <div class="flex items-center gap-2 lg:gap-3 shrink-0 overflow-x-auto lg:overflow-visible -mx-1 px-1 lg:mx-0 lg:px-0">
+            <a href="/trash-view" target="_blank" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/40 text-[10px] lg:text-xs text-rose-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 whitespace-nowrap shrink-0">
                 🗑️ 격리 보관소
             </a>
-            <a href="/keyword-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+            <a href="/keyword-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
                 🎯 키워드 제어
             </a>
-            <a href="/rss-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+            <a href="/rss-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
                 📡 RSS 관리
             </a>
         </div>
     </header>
 
     <!-- 메인 대시보드 그리드 레이아웃 -->
-    <main class="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-[1600px] w-full mx-auto">
+    <!-- 📱 모바일: grid-rows-2로 상/하 절반씩 고정 분할 (상단=키워드 포착, 하단=전체 뉴스) -->
+    <!-- 🖥️ lg 이상: 기존 12컬럼 좌우 2분할 그대로 유지 -->
+    <main class="flex-1 overflow-hidden grid grid-cols-1 grid-rows-2 lg:grid-cols-12 lg:grid-rows-1 gap-3 lg:gap-6 p-3 lg:p-6 max-w-[1600px] w-full mx-auto">
 
-        <!-- [좌측] 1. 포착 키워드 뉴스 영역 -->
-        <section class="lg:col-span-6 bg-slate-900/40 border border-slate-900 rounded-2xl p-5 flex flex-col overflow-hidden">
-            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-900 pb-3">
+        <!-- [모바일 상단 / PC 좌측] 1. 포착 키워드 뉴스 영역 -->
+        <section class="lg:col-span-6 bg-slate-900/40 border border-slate-900 rounded-2xl p-3 lg:p-5 flex flex-col overflow-hidden min-h-0">
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-3 lg:mb-4 shrink-0 border-b border-slate-900 pb-3">
                 <div class="flex items-center gap-2.5">
                     <span class="text-rose-500">🔥</span>
                     <h2 class="text-sm font-black tracking-wider text-rose-400 uppercase">키워드 포착 뉴스 피드</h2>
@@ -90,9 +92,9 @@
             </div>
         </section>
 
-        <!-- [우측] 2. 전체 원시 뉴스 스트림 영역 -->
-        <section class="lg:col-span-6 bg-slate-900/40 border border-slate-900 rounded-2xl p-5 flex flex-col overflow-hidden">
-            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-900 pb-3">
+        <!-- [모바일 하단 / PC 우측] 2. 전체 원시 뉴스 스트림 영역 -->
+        <section class="lg:col-span-6 bg-slate-900/40 border border-slate-900 rounded-2xl p-3 lg:p-5 flex flex-col overflow-hidden min-h-0">
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-3 lg:mb-4 shrink-0 border-b border-slate-900 pb-3">
                 <div class="flex items-center gap-3">
                     <span class="text-blue-400">⚡</span>
                     <h2 class="text-sm font-black tracking-wider text-blue-400 uppercase">실시간 전체 뉴스 피드</h2>
