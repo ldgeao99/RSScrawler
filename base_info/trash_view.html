@@ -32,30 +32,30 @@
 <body class="bg-slate-950 text-slate-100 font-sans h-screen w-screen flex flex-col overflow-hidden">
 
     <!-- 상단 전용 헤더 -->
-    <header class="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center shrink-0">
-        <div class="flex items-center gap-3">
-            <span class="text-xl">🗑️</span>
-            <h1 class="text-base font-extrabold tracking-wide text-white flex items-center gap-2">
+    <header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-3 lg:py-4 flex flex-col lg:flex-row gap-2 lg:gap-0 lg:justify-between lg:items-center shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="text-xl shrink-0">🗑️</span>
+            <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex flex-wrap items-center gap-2 min-w-0">
                 노이즈 격리 보관소
-                <span class="text-xs text-rose-400 font-bold bg-rose-950/60 border border-rose-900/40 px-2.5 py-0.5 rounded-full">노이즈 원천차단 모드</span>
+                <span class="text-xs text-rose-400 font-bold bg-rose-950/60 border border-rose-900/40 px-2.5 py-0.5 rounded-full shrink-0">노이즈 원천차단 모드</span>
             </h1>
         </div>
-        <div class="flex items-center gap-3">
-            <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+        <div class="flex items-center gap-3 shrink-0">
+            <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
                 🚪 창 닫기
             </button>
         </div>
     </header>
 
     <!-- 중앙 타임라인 전체 영역 -->
-    <main class="flex-1 overflow-hidden p-6 max-w-[1200px] w-full mx-auto flex flex-col">
-        <div class="bg-slate-900/40 border border-slate-900 rounded-2xl p-5 flex flex-col flex-1 overflow-hidden">
+    <main class="flex-1 overflow-hidden p-3 lg:p-6 max-w-[1200px] w-full mx-auto flex flex-col">
+        <div class="bg-slate-900/40 border border-slate-900 rounded-2xl p-3 lg:p-5 flex flex-col flex-1 overflow-hidden">
 
             <!-- 정보 바 -->
-            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-900 pb-3">
-                <div class="flex items-center gap-3">
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-3 lg:mb-4 shrink-0 border-b border-slate-900 pb-3">
+                <div class="flex flex-wrap items-center gap-2 lg:gap-3">
                     <span class="text-rose-500">●</span>
-                    <span class="text-xs text-slate-400 font-semibold">제외(블랙리스트) 단어 필터링에 걸려 원천 차단된 쓰레기 뉴스들입니다.</span>
+                    <span class="text-[11px] lg:text-xs text-slate-400 font-semibold">제외(블랙리스트) 단어 필터링에 걸려 원천 차단된 쓰레기 뉴스들입니다.</span>
                     <span id="live-time-indicator" class="font-mono text-xs text-rose-400 font-bold ml-2"></span>
                 </div>
                 <!-- 🟢 index.html과 완전하게 규격 및 색상 감각을 맞춘 듀얼 배지 시스템 -->
