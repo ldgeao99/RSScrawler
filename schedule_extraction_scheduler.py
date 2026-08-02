@@ -41,6 +41,9 @@ logger = logging.getLogger("news_logger")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("google").setLevel(logging.WARNING)
 logging.getLogger("google.genai").setLevel(logging.WARNING)  # 👈 이 줄을 추가하면 해당 WARNING 로그가 완벽히 차단됩니다.
+# thinking_config 미지정 시 응답에 섞이는 'non-text parts(thought_signature)' 안내성 경고 숨기기
+# (실제 로거 이름이 위 'google.genai'와 다른 'google_genai.types'라 별도로 잡아야 함 - 기능엔 영향 없는 정보성 로그)
+logging.getLogger("google_genai.types").setLevel(logging.ERROR)
 
 load_dotenv()
 
@@ -136,6 +139,9 @@ def push_schedules_to_firestore(schedule_results: list):
                 "detail": _to_firestore_value(news.get("details", "")),
                 "relatedStocks": _to_firestore_value(news.get("relatedStocks", "")),
                 "url": _to_firestore_value(news.get("link", "")),
+                # events의 'date'(일정 발생일)와는 별개로, 이 일정이 언제 수집(등록)됐는지를 남겨
+                # temp_events 검수 화면에서 등록일 순으로 정렬/구분할 수 있게 한다.
+                "articleDate": _to_firestore_value(news.get("time_kst", "")),
             }
         }
 
