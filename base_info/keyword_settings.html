@@ -14,17 +14,17 @@
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col overflow-x-hidden">
 
-<header class="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center shrink-0">
-    <div class="flex items-center gap-3">
-        <span class="text-xl">⚙️</span>
-        <h1 class="text-base font-extrabold tracking-wide text-white flex items-center gap-2">
+<header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-3 lg:py-4 flex flex-col lg:flex-row gap-2 lg:gap-0 lg:justify-between lg:items-center shrink-0">
+    <div class="flex items-center gap-3 min-w-0">
+        <span class="text-xl shrink-0">⚙️</span>
+        <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex flex-wrap items-center gap-2 min-w-0">
             포착 감시 키워드 관리 센터 (카테고리 분할 모드)
-            <span class="text-xs text-blue-400 font-bold bg-blue-950/60 border border-blue-900/40 px-2.5 py-0.5 rounded-full">설정 모드</span>
+            <span class="text-xs text-blue-400 font-bold bg-blue-950/60 border border-blue-900/40 px-2.5 py-0.5 rounded-full shrink-0">설정 모드</span>
         </h1>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 shrink-0">
         <button onclick="window.close()"
-                class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+                class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
             🚪 창 닫기
         </button>
     </div>
@@ -163,7 +163,7 @@
                    class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3.5 py-2 rounded-lg focus:outline-none focus:border-rose-500 text-slate-100 placeholder:text-slate-600"
                    onkeypress="if(event.key === 'Enter') addBlacklist()">
             <button onclick="addBlacklist()"
-                    class="bg-rose-600 hover:bg-rose-500 text-xs text-white px-5 py-2 rounded-lg font-bold transition-colors shrink-0">
+                    class="bg-rose-600 hover:bg-rose-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-colors shrink-0">
                 추가
             </button>
         </div>
