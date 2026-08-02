@@ -44,6 +44,8 @@ logging.getLogger("google.genai").setLevel(logging.WARNING)  # 👈 이 줄을 �
 # thinking_config 미지정 시 응답에 섞이는 'non-text parts(thought_signature)' 안내성 경고 숨기기
 # (실제 로거 이름이 위 'google.genai'와 다른 'google_genai.types'라 별도로 잡아야 함 - 기능엔 영향 없는 정보성 로그)
 logging.getLogger("google_genai.types").setLevel(logging.ERROR)
+# 'AFC is enabled with max remote calls: 10.' 같은 노이즈 안내 로그 숨기기 (function calling 미사용 - 무관)
+logging.getLogger("google_genai.models").setLevel(logging.WARNING)
 
 load_dotenv()
 
