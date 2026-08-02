@@ -184,7 +184,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 MAX_CONCURRENT_REQUESTS = 10
-SIMILARITY_THRESHOLD = 60  # 뉴스 제목 간의 중복 판정 임계값
+SIMILARITY_THRESHOLD = 50  # 뉴스 제목 간의 중복 판정 임계값
 
 # 💰 [예산 방어선] 월 5,000원 목표 기준 하루 상한 (Stage3가 비용 대부분을 차지하므로 여기만 캡 걸어도 충분)
 MAX_STAGE3_ITEMS_PER_DAY = 100
