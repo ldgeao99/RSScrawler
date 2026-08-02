@@ -6,6 +6,7 @@ import os
 import re
 import urllib.request
 import requests
+from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -16,10 +17,20 @@ from rapidfuzz import fuzz
 from cost_tracker import CostTracker
 
 # ==========================================================
-# ⚙️ [테스트 설정] 파일 경로 및 상수 지정
+# ⚙️ 파일 경로 설정
 # ==========================================================
-INPUT_BACKUP_FILE = "news_back_up/news_list_filtered_backup_260731.json"
-OUTPUT_SCHEDULE_FILE = "extracted_schedule/extracted_schedules_260731.json"  # 최종 3단계 결과 저장 파일
+def get_yesterday_file_paths():
+    """
+    전일(어제, KST 기준) 날짜의 백업 파일을 입력으로, 같은 날짜의 산출 파일 경로를 반환한다.
+    back_up_scheduler.py가 자정에 'news_list_filtered_backup_YYMMDD.json'을 만들어두므로,
+    이 파이프라인은 항상 '어제' 날짜 백업을 대상으로 실행된다.
+    """
+    kst_tz = timezone(timedelta(hours=9))
+    yesterday = datetime.now(kst_tz) - timedelta(days=1)
+    date_str = yesterday.strftime("%y%m%d")
+    input_file = f"news_back_up/news_list_filtered_backup_{date_str}.json"
+    output_file = f"extracted_schedule/extracted_schedules_{date_str}.json"
+    return input_file, output_file
 
 # ==========================================================
 # 🔥 Firebase(Firestore) 연동 설정
@@ -417,14 +428,19 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
 # ==========================================================
 # 🚀 통합 제어 메인 오케스트레이터
 # ==========================================================
-async def main():
+async def main(input_file: str = None, output_file: str = None):
+    if not input_file or not output_file:
+        default_input, default_output = get_yesterday_file_paths()
+        input_file = input_file or default_input
+        output_file = output_file or default_output
+
     logger.info("🧪 하이브리드 [OpenAI + Gemini] 3단계 뉴스 정제 파이프라인 가동")
 
     try:
-        with open(INPUT_BACKUP_FILE, "r", encoding="utf-8") as f:
+        with open(input_file, "r", encoding="utf-8") as f:
             raw_data = json.load(f)
         total_raw_count = len(raw_data)
-        logger.info(f"📂 백업 로드 성공: '{INPUT_BACKUP_FILE}' (총 {total_raw_count}건)")
+        logger.info(f"📂 백업 로드 성공: '{input_file}' (총 {total_raw_count}건)")
 
         # 1차 단계: 중복 제거 파이프라인 구동
         purged_data = process_duplicate_purge_pipeline(raw_data)
@@ -481,11 +497,12 @@ async def main():
         final_schedule_results = await asyncio.gather(*gemini_tasks)
 
         # 최종 저장
-        with open(OUTPUT_SCHEDULE_FILE, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(final_schedule_results, f, ensure_ascii=False, indent=2)
 
         logger.info(
-            f"\n💾 [파이프라인 최종 완수] 총 {len(final_schedule_results)}건의 정밀 일정 캘린더 데이터 저장 완료: '{OUTPUT_SCHEDULE_FILE}'")
+            f"\n💾 [파이프라인 최종 완수] 총 {len(final_schedule_results)}건의 정밀 일정 캘린더 데이터 저장 완료: '{output_file}'")
 
         # 🔥 Firestore(temp_events) 업로드
         push_schedules_to_firestore(final_schedule_results)
@@ -494,9 +511,44 @@ async def main():
         cost_tracker.check_budget(monthly_budget_krw=5000)
 
     except FileNotFoundError:
-        logger.error(f"❌ 백업 파일을 찾을 수 없습니다: '{INPUT_BACKUP_FILE}'")
+        logger.error(f"❌ 백업 파일을 찾을 수 없습니다: '{input_file}'")
     except Exception as e:
         logger.error(f"❌ 파이프라인 가동 중 치명적 예외 발생: {e}")
+
+
+# ==========================================================
+# ⏰ [배치 스케줄러] 매일 00시 이후 자동 실행
+# ==========================================================
+# back_up_scheduler.py가 00:00:00 KST 정각에 전일 백업 파일을 만든다.
+# 이 파이프라인은 그 백업 파일을 입력으로 쓰므로, 백업이 끝났다고 안전하게 확신할 수 있도록
+# 정각과 겹치지 않게 15분 뒤(00:15:00 KST)로 실행 시각을 잡는다.
+SCHEDULE_EXTRACTION_RUN_HOUR = 0
+SCHEDULE_EXTRACTION_RUN_MINUTE = 15
+
+
+async def daily_schedule_extraction_scheduler():
+    logger.info("⏰ 일별 자동 일정 추출 스케줄러가 독립 모듈에서 가동되었습니다.")
+
+    while True:
+        kst_tz = timezone(timedelta(hours=9))
+        now = datetime.now(kst_tz)
+
+        target_today = datetime(
+            now.year, now.month, now.day,
+            SCHEDULE_EXTRACTION_RUN_HOUR, SCHEDULE_EXTRACTION_RUN_MINUTE, 0,
+            tzinfo=kst_tz
+        )
+        target = target_today if now < target_today else target_today + timedelta(days=1)
+        seconds_until_run = (target - now).total_seconds()
+
+        logger.info(f"⏳ 다음 일정 추출 배치까지 대기: {seconds_until_run / 60:.1f}분 후 ({target.strftime('%Y-%m-%d %H:%M:%S')} KST)")
+        await asyncio.sleep(seconds_until_run)
+
+        try:
+            await main()
+        except Exception as e:
+            logger.error(f"❌ [일정 추출 스케줄러 에러] 정기 실행 중 치명적 오류 발생: {e}")
+            await asyncio.sleep(10)  # 루프 파괴 방지용 유예 코드
 
 
 if __name__ == "__main__":
