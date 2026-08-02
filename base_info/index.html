@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 뉴스 감시 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .news-entry {
+            animation: slideDown 0.35s ease-out forwards;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 신규 뉴스 유입 시 텍스트 자체가 에메랄드빛으로 번쩍이는 효과 */
+        @keyframes flash-green {
+            0% { color: #10b981; text-shadow: 0 0 8px rgba(16, 185, 129, 0.6); transform: scale(1.03); }
+            100% { color: #64748b; text-shadow: none; transform: scale(1); }
+        }
+        .flash-active {
+            animation: flash-green 1.2s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans h-screen w-screen flex flex-col overflow-hidden">
+
+    <!-- 상단 간결한 헤더 (동기화 완료 배지 상단 매핑 완료) -->
+    <header class="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center shrink-0">
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+            <span class="text-xl">🎯</span>
+            <h1 class="text-base font-extrabold tracking-wide text-white flex items-center gap-2 shrink-0">
+                실시간 뉴스 시그널 감시센터
+                <span class="text-[10px] bg-slate-800 text-blue-400 px-2.5 py-0.5 rounded-full border border-slate-700 font-normal">Active</span>
+            </h1>
+            <!-- 🟢 [요청사항 반영] 동기화 타임 배지가 상단 헤더 영역으로 깔끔하게 이동했습니다 -->
+            <span id="time-badge" class="font-mono text-[11px] text-slate-500 font-bold tracking-tight truncate border-l border-slate-800 pl-3 ml-2 transition-all duration-200">
+                동기화 대기 중...
+            </span>
+            <!-- 채널별 전용 감시 모드일 때 보여줄 배지 -->
+            <div id="filter-status-badge" class="hidden items-center gap-2 bg-blue-950/80 border border-blue-800 px-3 py-1 rounded-lg text-xs text-blue-300 ml-3">
+                <span id="active-source-name" class="font-extrabold"></span> 전용 채널 관제 중
+                <a href="/" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-black transition-colors">전체보기</a>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+            <a href="/trash-view" target="_blank" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/40 text-xs text-rose-300 px-4 py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5">
+                🗑️ 격리 보관소
+            </a>
+            <a href="/keyword-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+                🎯 키워드 제어
+            </a>
+            <a href="/rss-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+                📡 RSS 관리
+            </a>
+        </div>
+    </header>
+
+    <!-- 메인 대시보드 그리드 레이아웃 -->
+    <main class="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-[1600px] w-full mx-auto">
+
+        <!-- [좌측] 1. 포착 키워드 뉴스 영역 -->
+        <section class="lg:col-span-6 bg-slate-900/40 border border-slate-900 rounded-2xl p-5 flex flex-col overflow-hidden">
+            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-900 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-rose-500">🔥</span>
+                    <h2 class="text-sm font-black tracking-wider text-rose-400 uppercase">키워드 포착 뉴스 피드</h2>
+                </div>
+                <!-- 🟢 기존 마크업과 완전히 대칭을 맞추며 색상 스타일을 균형 있게 통일 -->
+                <div class="flex items-center gap-4 text-xs text-slate-400 font-medium">
+                    <div class="flex items-center gap-1.5">
+                        <span>현재 노출 건수:</span>
+                        <span id="filtered-render-count" class="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-bold font-mono">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 border-l border-slate-800 pl-3">
+                        <span>이틀간 총 수집 건수:</span>
+                        <span id="filtered-count" class="bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full border border-slate-700 font-black font-mono">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="filtered-news-container" class="flex-1 overflow-y-auto space-y-3.5 pr-1.5">
+                <!-- 포착 기사 렌더링 -->
+            </div>
+        </section>
+
+        <!-- [우측] 2. 전체 원시 뉴스 스트림 영역 -->
+        <section class="lg:col-span-6 bg-slate-900/40 border border-slate-900 rounded-2xl p-5 flex flex-col overflow-hidden">
+            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-900 pb-3">
+                <div class="flex items-center gap-3">
+                    <span class="text-blue-400">⚡</span>
+                    <h2 class="text-sm font-black tracking-wider text-blue-400 uppercase">실시간 전체 뉴스 피드</h2>
+                </div>
+                <!-- 🟢 기존 마크업과 완전히 대칭을 맞추며 색상 스타일을 균형 있게 통일 -->
+                <div class="flex items-center gap-4 text-xs text-slate-400 font-medium shrink-0">
+                    <div class="flex items-center gap-1.5">
+                        <span>현재 노출 건수:</span>
+                        <span id="stream-render-count" class="bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-bold font-mono">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 border-l border-slate-800 pl-3">
+                        <span>이틀간 총 수집 건수:</span>
+                        <span id="stream-count" class="bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full border border-slate-700 font-black font-mono">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="stream-news-container" class="flex-1 overflow-y-auto space-y-3 pr-1.5">
+                <!-- 전체 기사 렌더링 -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="bg-slate-900 border-t border-slate-800 px-8 py-3 text-xs text-slate-500 flex justify-between items-center shrink-0">
+        <div>상태: <span class="text-emerald-400 font-bold">● 실시간 감시 엔진 원활</span></div>
+        <div class="font-mono text-[10px] text-slate-600">30s 엔진 주기 자동 폴링 동기화 적용됨</div>
+    </footer>
+
+    <script>
+        const renderedStreamLinks = new Set();
+        const renderedFilteredLinks = new Set();
+        let targetKeywords = [];
+
+        // 🟢 [무한 스크롤 제어 변수] 각 섹션별로 현재 화면에 노출된 기사 수(오프셋)를 관리합니다.
+        let streamOffset = 0;
+        let filteredOffset = 0;
+        let isStreamLoading = false;
+        let isFilteredLoading = false;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const filterSource = urlParams.get('source');
+
+        async function fetchKeywords() {
+            try {
+                const res = await fetch('/api/keywords');
+                targetKeywords = await res.json();
+            } catch (e) {
+                console.error("키워드 로드 실패:", e);
+            }
+        }
+
+        function createNewsCard(item, isFilteredBox = false) {
+            // 🟢 [수정]: JavaScript Date 객체를 거치지 않고, 백엔드가 제공한 한국 시간 문자열(item.time)을 그대로 매핑합니다.
+            const timeFormatted = item.time;
+
+            let titleHtml = item.title;
+
+            // [버그 교정]: 이미 치환된 HTML 태그 내부 영역 제외 후 키워드 매칭 정규식
+            targetKeywords.forEach(kw => {
+                const trimmedKw = kw.trim();
+                if (trimmedKw) {
+                    const escapedKw = trimmedKw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    const regex = new RegExp(`(?<!<[^>]*)${escapedKw}(?![^<>]*>)`, 'g');
+                    titleHtml = titleHtml.replace(regex, `<span class="bg-amber-400/10 text-amber-400 px-1 py-0.5 rounded border border-amber-400/20 font-bold">${trimmedKw}</span>`);
+                }
+            });
+
+            return `
+                <div class="news-entry bg-slate-900/50 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700/80 p-4 rounded-xl transition-all duration-200">
+                    <div class="flex items-center gap-3 mb-2 justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <span class="bg-slate-800 border border-slate-700 text-slate-300 text-[10px] font-black px-2 py-0.5 rounded tracking-wide">
+                                ${item.source}
+                            </span>
+                            <span class="text-[10px] text-slate-500 font-mono font-semibold">${timeFormatted}</span>
+                        </div>
+                    </div>
+                    <h3 class="text-xs md:text-sm font-semibold text-slate-100 leading-relaxed">
+                        <a href="${item.link}" target="_blank" class="hover:text-blue-400 hover:underline transition-colors block">
+                            ${titleHtml}
+                        </a>
+                    </h3>
+                </div>
+            `;
+        }
+
+        function triggerTimeUpdateFlash(isInitial = false) {
+            const timeBadge = document.getElementById('time-badge');
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+
+            if (isInitial) {
+                timeBadge.textContent = `초기 뉴스 동기화 완료: ${timeStr}`;
+            } else {
+                timeBadge.textContent = `최근 뉴스 실시간 유입: ${timeStr}`;
+                timeBadge.classList.remove('flash-active');
+                void timeBadge.offsetWidth;
+                timeBadge.classList.add('flash-active');
+            }
+        }
+
+        function shouldRenderItem(item) {
+            if (!filterSource) return true;
+            return item.source === filterSource || item.source.includes(`(${filterSource})`);
+        }
+
+        // 🚀 초기 로딩 로직 (오프셋 0번부터 최초 100건 로드)
+        async function loadInitialNews() {
+            try {
+                await fetchKeywords();
+
+                if (filterSource) {
+                    const badge = document.getElementById('filter-status-badge');
+                    const nameSpan = document.getElementById('active-source-name');
+                    nameSpan.textContent = filterSource;
+                    badge.classList.remove('hidden');
+                    badge.classList.add('flex');
+                }
+
+                renderedStreamLinks.clear();
+                renderedFilteredLinks.clear();
+                streamOffset = 0;
+                filteredOffset = 0;
+
+                // 1) 전체 뉴스 초기화
+                const streamRes = await fetch(`/api/realtime-news?offset=${streamOffset}`);
+                const streamData = await streamRes.json();
+                document.getElementById('stream-count').textContent = streamData.total_count;
+
+                const streamContainer = document.getElementById('stream-news-container');
+                let streamHtml = "";
+                streamData.news.forEach(item => {
+                    renderedStreamLinks.add(item.link);
+                    if (shouldRenderItem(item)) streamHtml += createNewsCard(item, false);
+                });
+                streamContainer.innerHTML = streamHtml || '<div class="text-slate-600 text-xs py-12 text-center">수집 대기 중이거나 기사가 없습니다.</div>';
+                streamOffset = streamContainer.querySelectorAll('.news-entry').length;
+                document.getElementById('stream-render-count').textContent = streamOffset;
+
+                // 2) 키워드 뉴스 초기화
+                const filteredRes = await fetch(`/api/filtered-news?offset=${filteredOffset}`);
+                const filteredData = await filteredRes.json();
+                document.getElementById('filtered-count').textContent = filteredData.total_count;
+
+                const filteredContainer = document.getElementById('filtered-news-container');
+                let filteredHtml = "";
+                filteredData.news.forEach(item => {
+                    renderedFilteredLinks.add(item.link);
+                    if (shouldRenderItem(item)) filteredHtml += createNewsCard(item, true);
+                });
+                filteredContainer.innerHTML = filteredHtml || '<div class="text-slate-600 text-xs py-12 text-center">포착된 소식이 없습니다.</div>';
+                filteredOffset = filteredContainer.querySelectorAll('.news-entry').length;
+                document.getElementById('filtered-render-count').textContent = filteredOffset;
+
+                if (streamOffset > 0 || filteredOffset > 0) triggerTimeUpdateFlash(true);
+
+            } catch (e) {
+                console.error("초기 기사 로드 실패:", e);
+            }
+        }
+
+        // 🚀 실시간 상단 유입 로직 (기존 2초 폴링 유지, 상단 최신뉴스 추가용)
+        async function updateLiveNews() {
+            try {
+                // 상단 유입은 항상 가장 최신판(offset=0) 상자에서 새로 들어온 기사만 체크합니다.
+                const streamRes = await fetch('/api/realtime-news?offset=0');
+                const streamData = await streamRes.json();
+                document.getElementById('stream-count').textContent = streamData.total_count;
+
+                const streamContainer = document.getElementById('stream-news-container');
+                let anyNew = false;
+
+                [...streamData.news].reverse().forEach(item => {
+                    if (renderedStreamLinks.has(item.link)) return;
+                    renderedStreamLinks.add(item.link);
+
+                    if (shouldRenderItem(item)) {
+                        const card = createNewsCard(item, false);
+                        const temp = document.createElement('div');
+                        temp.innerHTML = card;
+                        if (streamContainer.firstChild && streamContainer.querySelector('.news-entry')) {
+                            streamContainer.insertBefore(temp.firstElementChild, streamContainer.firstChild);
+                        } else {
+                            streamContainer.innerHTML = "";
+                            streamContainer.appendChild(temp.firstElementChild);
+                        }
+                        anyNew = true;
+                        streamOffset++; // 상단 유입 시 전체 카운트 증가
+                    }
+                });
+                document.getElementById('stream-render-count').textContent = streamContainer.querySelectorAll('.news-entry').length;
+
+                const filteredRes = await fetch('/api/filtered-news?offset=0');
+                const filteredData = await filteredRes.json();
+                document.getElementById('filtered-count').textContent = filteredData.total_count;
+
+                const filteredContainer = document.getElementById('filtered-news-container');
+                [...filteredData.news].reverse().forEach(item => {
+                    if (renderedFilteredLinks.has(item.link)) return;
+                    renderedFilteredLinks.add(item.link);
+
+                    if (shouldRenderItem(item)) {
+                        const card = createNewsCard(item, true);
+                        const temp = document.createElement('div');
+                        temp.innerHTML = card;
+                        if (filteredContainer.firstChild && filteredContainer.querySelector('.news-entry')) {
+                            filteredContainer.insertBefore(temp.firstElementChild, filteredContainer.firstChild);
+                        } else {
+                            filteredContainer.innerHTML = "";
+                            filteredContainer.appendChild(temp.firstElementChild);
+                        }
+                        anyNew = true;
+                        filteredOffset++;
+                    }
+                });
+                document.getElementById('filtered-render-count').textContent = filteredContainer.querySelectorAll('.news-entry').length;
+
+                if (anyNew) triggerTimeUpdateFlash(false);
+
+            } catch (e) {
+                console.error("실시간 갱신 실패:", e);
+            }
+        }
+
+        // 🟢 [신규 기능]: 스크롤 하단 도달 시 과거 데이터를 불러와 아래에 붙이는 무한 스크롤 엔진
+        async function loadMorePastNews(isFilteredBox = false) {
+            if (isFilteredBox) {
+                if (isFilteredLoading) return;
+                isFilteredLoading = true;
+                try {
+                    const res = await fetch(`/api/filtered-news?offset=${filteredOffset}`);
+                    const data = await res.json();
+                    if (data.news && data.news.length > 0) {
+                        const container = document.getElementById('filtered-news-container');
+                        let html = "";
+                        data.news.forEach(item => {
+                            if (renderedFilteredLinks.has(item.link)) return;
+                            renderedFilteredLinks.add(item.link);
+                            if (shouldRenderItem(item)) html += createNewsCard(item, true);
+                        });
+                        if (html) {
+                            const temp = document.createElement('div');
+                            temp.innerHTML = html;
+                            while (temp.firstChild) container.appendChild(temp.firstChild);
+                        }
+                        filteredOffset = container.querySelectorAll('.news-entry').length;
+                        document.getElementById('filtered-render-count').textContent = filteredOffset;
+                    }
+                } catch (e) { console.error("과거 키워드 뉴스 로드 실패:", e); }
+                isFilteredLoading = false;
+            } else {
+                if (isStreamLoading) return;
+                isStreamLoading = true;
+                try {
+                    const res = await fetch(`/api/realtime-news?offset=${streamOffset}`);
+                    const data = await res.json();
+                    if (data.news && data.news.length > 0) {
+                        const container = document.getElementById('stream-news-container');
+                        let html = "";
+                        data.news.forEach(item => {
+                            if (renderedStreamLinks.has(item.link)) return;
+                            renderedStreamLinks.add(item.link);
+                            if (shouldRenderItem(item)) html += createNewsCard(item, false);
+                        });
+                        if (html) {
+                            const temp = document.createElement('div');
+                            temp.innerHTML = html;
+                            while (temp.firstChild) container.appendChild(temp.firstChild);
+                        }
+                        streamOffset = container.querySelectorAll('.news-entry').length;
+                        document.getElementById('stream-render-count').textContent = streamOffset;
+                    }
+                } catch (e) { console.error("과거 전체 뉴스 로드 실패:", e); }
+                isStreamLoading = false;
+            }
+        }
+
+        // 🟢 개별 컨테이너 내부 스크롤 감지 이벤트 등록
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadInitialNews();
+            setInterval(updateLiveNews, 2000);
+
+            // 좌측 키워드 박스 스크롤 감시
+            document.getElementById('filtered-news-container').addEventListener('scroll', function() {
+                // 바닥에서 30px 이내로 접근했을 때 촉발
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 30) {
+                    loadMorePastNews(true);
+                }
+            });
+
+            // 우측 전체뉴스 박스 스크롤 감시
+            document.getElementById('stream-news-container').addEventListener('scroll', function() {
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 30) {
+                    loadMorePastNews(false);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS 구독 설정 센터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* 모던 토글 스위치 스타일 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #334155;
+            transition: .3s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px; width: 18px;
+            left: 3px; bottom: 3px;
+            background-color: #f8fafc;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #10b981; /* 활성화 시 에메랄드 그린 */
+        }
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col overflow-x-hidden">
+
+    <header class="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center shrink-0">
+        <div class="flex items-center gap-3">
+            <span class="text-xl">📡</span>
+            <h1 class="text-base font-extrabold tracking-wide text-white flex items-center gap-2">
+                RSS 수집 출처 제어 센터
+                <span class="text-xs text-amber-400 font-bold bg-amber-950/60 border border-amber-900/40 px-2.5 py-0.5 rounded-full">피드 관리 모드</span>
+            </h1>
+        </div>
+        <!-- 🟢 다른 설정 창들과 완벽하게 규격을 맞춘 창 닫기 버튼 레이아웃 -->
+        <div class="flex items-center gap-3">
+            <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+                🚪 창 닫기
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 w-full max-w-5xl mx-auto px-4 py-8 space-y-6">
+
+        <section class="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-xl">
+            <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <span>➕</span> 새 구독 채널 등록하기
+            </h2>
+            <div class="flex flex-col md:flex-row gap-3 bg-slate-950 p-4 rounded-xl border border-slate-850">
+                <div class="w-full md:w-1/3">
+                    <input type="text" id="channelName" placeholder="채널 식별명 (예: 한경_부동산)"
+                           class="w-full bg-slate-900 border border-slate-800 text-sm px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100 placeholder:text-slate-600">
+                </div>
+                <div class="flex-1">
+                    <input type="text" id="channelUrl" placeholder="RSS XML URL 주소 입력..."
+                           class="w-full bg-slate-900 border border-slate-800 text-sm px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100 placeholder:text-slate-600">
+                </div>
+                <button onclick="addChannel()" class="bg-emerald-600 hover:bg-emerald-500 text-sm text-white px-6 py-2.5 rounded-lg font-bold transition-colors shrink-0 shadow-md">
+                    채널 구독 추가
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-xl overflow-hidden">
+            <div class="flex justify-between items-center mb-6 pb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                    <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider">구독 중인 채널 전체 목록</h2>
+                    <span id="rss-count" class="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-extrabold">0</span>
+                </div>
+                <p class="text-[11px] text-slate-500">💡 최근 응답코드를 보고 403(차단) 등이 지속되는 채널은 잠시 활성화를 끄는 것을 권장합니다.</p>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase tracking-wider">
+                            <th class="py-3 px-4 text-center font-bold" style="width: 130px;">수집 활성화</th>
+                            <th class="py-3 px-4 font-bold" style="width: 170px;">채널명</th>
+                            <th class="py-3 px-4 font-bold" style="width: 250px;">RSS URL 주소</th>
+                            <th class="py-3 px-4 text-center font-bold" style="width: 120px;">최근 응답코드</th>
+                            <th class="py-3 px-4 text-center font-bold" style="width: 140px;">오늘 수집량</th>
+                            <th class="py-3 px-4 text-center font-bold" style="width: 150px;">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rssTableBody" class="divide-y divide-slate-800/50">
+                        </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-slate-900 border-t border-slate-800/80 px-8 py-3 text-xs text-slate-500 flex justify-between items-center shrink-0">
+        <div>현재 모드: <strong>정렬 및 응답코드 모니터링 모드</strong></div>
+        <a href="/keyword-settings" target="_blank" class="text-blue-400 hover:text-blue-300 font-bold transition-colors">
+            🎯 감시 키워드 관리 페이지로 가기 ▶
+        </a>
+    </footer>
+
+    <script>
+        let rssList = [];
+        let editIndex = null; // 현재 편집 중인 채널의 인덱스 저장
+
+        // 데이터 로드
+        async function loadRssChannels() {
+            try {
+                const response = await fetch('/api/rss');
+                rssList = await response.json();
+                renderTable();
+            } catch (error) {
+                console.error("채널 로드 오류:", error);
+            }
+        }
+
+        // 응답 상태에 맞는 컬러 태그 생성 도구
+        function getStatusCodeBadge(code) {
+            if (code === undefined || code === null || code === "-") {
+                return `<span class="bg-slate-800/80 text-slate-400 border border-slate-700/60 px-2.5 py-0.5 rounded font-mono text-[10px] font-bold">대기중</span>`;
+            }
+            if (code === "OFF") {
+                return `<span class="bg-slate-900 text-slate-600 border border-slate-800 px-2.5 py-0.5 rounded font-mono text-[10px] font-bold">비활성</span>`;
+            }
+
+            const num = Number(code);
+            if (num === 200) {
+                return `<span class="bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded font-mono text-[11px] font-black">200 OK</span>`;
+            } else if (num === 403) {
+                return `<span class="bg-rose-950/80 text-rose-400 border border-rose-500/40 px-2 py-0.5 rounded font-mono text-[11px] font-black animate-pulse">403 Block</span>`;
+            } else if (num === 429) {
+                return `<span class="bg-amber-950/80 text-amber-400 border border-amber-500/40 px-2 py-0.5 rounded font-mono text-[11px] font-black animate-pulse">429 Limit</span>`;
+            } else if (isNaN(num)) {
+                return `<span class="bg-rose-950/80 text-rose-400 border border-rose-900/40 px-2.5 py-0.5 rounded font-mono text-[11px] font-bold">${code}</span>`;
+            } else {
+                return `<span class="bg-rose-950/80 text-rose-300 border border-rose-900/40 px-2.5 py-0.5 rounded font-mono text-[11px] font-bold">${num} Error</span>`;
+            }
+        }
+
+        // 테이블 렌더링
+        function renderTable() {
+            const tbody = document.getElementById('rssTableBody');
+            document.getElementById('rss-count').textContent = rssList.length;
+            tbody.innerHTML = '';
+
+            if (rssList.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-slate-600 py-16 border-b border-slate-800/50">
+                            구독 중인 뉴스 피드가 없습니다. 상단에서 추가해 주세요.
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            rssList.forEach((ch, index) => {
+                const isChecked = ch.enabled !== false ? 'checked' : '';
+                const badgeClass = ch.enabled !== false
+                    ? "bg-emerald-950/60 text-emerald-400 border-emerald-500/20"
+                    : "bg-slate-800/60 text-slate-500 border-slate-700/50";
+                const badgeText = ch.enabled !== false ? '수집중' : '중단됨';
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-900/30 transition-colors";
+
+                // 현재 행이 수정 상태(편집) 모드일 경우
+                if (editIndex === index) {
+                    tr.innerHTML = `
+                        <td class="py-3 px-4 opacity-40 pointer-events-none">
+                            <div class="flex items-center justify-center gap-3">
+                                <label class="switch shrink-0">
+                                    <input type="checkbox" ${isChecked}>
+                                    <span class="slider"></span>
+                                </label>
+                                <span class="badge border text-[10px] px-2 py-0.5 rounded font-extrabold shrink-0 tracking-wide ${badgeClass}">
+                                    ${badgeText}
+                                </span>
+                            </div>
+                        </td>
+
+                        <td class="py-3 px-4">
+                            <input type="text" id="edit-name-${index}" value="${ch.name}"
+                                   class="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-slate-100 focus:outline-none focus:border-emerald-500 font-bold">
+                        </td>
+
+                        <td class="py-3 px-4">
+                            <input type="text" id="edit-url-${index}" value="${ch.url}"
+                                   class="w-full bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded text-slate-100 focus:outline-none focus:border-emerald-500 font-mono">
+                        </td>
+
+                        <td class="py-3 px-4 text-center font-mono font-bold text-slate-600">
+                            -
+                        </td>
+
+                        <td class="py-3 px-4 text-center font-mono font-bold text-slate-600">
+                            -
+                        </td>
+
+                        <td class="py-3 px-4 text-center">
+                            <div class="flex gap-2 justify-center">
+                                <button onclick="saveEdit(${index})" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded text-[11px] font-extrabold transition-all shadow-md shrink-0">
+                                    저장
+                                </button>
+                                <button onclick="cancelEdit()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-1.5 rounded text-[11px] font-extrabold border border-slate-700 transition-all shrink-0">
+                                    취소
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                } else {
+                    // 일반 조회 모드일 경우 (★ 채널명 링크 클릭 시 전용 단독 뷰어 창 띄우기 반영 완료)
+                    tr.innerHTML = `
+                        <td class="py-4 px-4">
+                            <div class="flex items-center justify-center gap-3">
+                                <label class="switch shrink-0">
+                                    <input type="checkbox" ${isChecked} onchange="toggleChannel(${index}, this.checked)">
+                                    <span class="slider"></span>
+                                </label>
+                                <span class="badge border text-[10px] px-2 py-0.5 rounded font-extrabold shrink-0 tracking-wide ${badgeClass}">
+                                    ${badgeText}
+                                </span>
+                            </div>
+                        </td>
+
+                        <td class="py-4 px-4 font-extrabold truncate max-w-[180px]" title="${ch.name}">
+                            <a href="/channel-view?source=${encodeURIComponent(ch.name)}" target="_blank"
+                               class="text-blue-400 hover:text-blue-300 hover:underline transition-colors block">
+                                ${ch.name}
+                            </a>
+                        </td>
+
+                        <td class="py-4 px-4 font-mono text-[11px] truncate max-w-[250px]" title="원문 피드 열기: ${ch.url}">
+                            <a href="${ch.url}" target="_blank" class="text-slate-400 hover:text-emerald-400 hover:underline transition-colors">
+                                ${ch.url}
+                            </a>
+                        </td>
+
+                        <td class="py-4 px-4 text-center">
+                            ${getStatusCodeBadge(ch.status_code)}
+                        </td>
+
+                        <td class="py-4 px-4 text-center font-mono text-xs">
+                            <span class="text-slate-300 font-bold bg-slate-900/50 px-3 py-1.5 rounded border border-slate-800/80">
+                                <span class="${ch.today_count > 0 ? 'text-amber-400 font-black' : 'text-slate-500'}">
+                                    ${ch.today_count || 0}
+                                </span> 건
+                            </span>
+                        </td>
+
+                        <td class="py-4 px-4 text-center">
+                            <div class="flex gap-2 justify-center">
+                                <button class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3.5 py-1.5 rounded text-[11px] font-extrabold border border-slate-700 transition-all shrink-0"
+                                        onclick="startEdit(${index})">
+                                    수정
+                                </button>
+                                <button class="bg-rose-950/60 hover:bg-rose-600 text-rose-400 hover:text-white px-3.5 py-1.5 rounded text-[11px] font-extrabold border border-rose-900/40 hover:border-rose-500 transition-all shrink-0"
+                                        onclick="deleteChannel(${index})">
+                                    삭제
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                }
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 수동 편집 활성화 시작
+        function startEdit(index) {
+            editIndex = index;
+            renderTable();
+        }
+
+        // 편집 취소
+        function cancelEdit() {
+            editIndex = null;
+            renderTable();
+        }
+
+        // 인라인 편집 데이터 저장 반영
+        async function saveEdit(index) {
+            const nameField = document.getElementById(`edit-name-${index}`);
+            const urlField = document.getElementById(`edit-url-${index}`);
+
+            const updatedName = nameField.value.trim();
+            const updatedUrl = urlField.value.trim();
+
+            if (!updatedUrl) {
+                alert("URL 주소는 필수 입력 사항입니다.");
+                return;
+            }
+
+            const isDuplicate = rssList.some((ch, idx) => ch.url === updatedUrl && idx !== index);
+            if (isDuplicate) {
+                alert("이미 다른 채널에 등록된 주소입니다.");
+                return;
+            }
+
+            // 수정 데이터 매핑
+            rssList[index].name = updatedName || "수집 채널";
+            rssList[index].url = updatedUrl;
+
+            editIndex = null; // 수정 완료로 전환
+            await saveRssChannels();
+            renderTable();
+        }
+
+        // 토글 스위치 이벤트 처리
+        async function toggleChannel(index, enabled) {
+            rssList[index].enabled = enabled;
+            await saveRssChannels();
+            renderTable();
+        }
+
+        // 새 채널 추가
+        async function addChannel() {
+            const nameInput = document.getElementById('channelName');
+            const urlInput = document.getElementById('channelUrl');
+
+            const name = nameInput.value.trim();
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                alert("RSS URL 주소는 필수 사항입니다.");
+                return;
+            }
+
+            let finalName = name;
+            if (!finalName) {
+                try {
+                    finalName = new URL(url).hostname;
+                } catch(e) {
+                    finalName = "수집 채널";
+                }
+            }
+
+            const isDuplicate = rssList.some(ch => ch.url === url);
+            if (isDuplicate) {
+                alert("이미 등록된 주소입니다.");
+                return;
+            }
+
+            rssList.push({ name: finalName, url: url, enabled: true });
+            await saveRssChannels();
+
+            nameInput.value = '';
+            urlInput.value = '';
+            renderTable();
+        }
+
+        // 채널 삭제
+        async function deleteChannel(index) {
+            if (confirm("정말 이 채널을 구독 해제(삭제)하시겠습니까?")) {
+                rssList.splice(index, 1);
+                await saveRssChannels();
+                renderTable();
+            }
+        }
+
+        // 백엔드 영구 보존 요청
+        async function saveRssChannels() {
+            try {
+                const response = await fetch('/api/rss', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(rssList)
+                });
+                if (!response.ok) {
+                    throw new Error("저장 실패");
+                }
+            } catch (error) {
+                alert("서버 통신 중 저장 오류가 발생했습니다.");
+            }
+        }
+
+        // 최초 실행 및 실시간 데이터 갱신 루프 (3초마다 자동 리프레시되면서 응답코드 최신화)
+        loadRssChannels();
+        setInterval(loadRssChannels, 3000);
+    </script>
+</body>
+</html>

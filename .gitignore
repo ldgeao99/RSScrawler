@@ -1,0 +1,30 @@
+# API 키 등 민감정보 (절대 커밋 금지)
+.env
+
+# 로컬 편의용 폴더 연결 (다른 로컬 프로젝트를 가리키는 심볼릭 링크/정션 - 커밋 금지)
+firebase_site/
+
+# 서버에서 직접 큐레이션되는 운영 데이터 (git으로 관리하면 배포 시 서버 최신본을 덮어씀 - 추적 제외)
+base_info/keyword_list_exclude.json
+base_info/keyword_list_include.json
+base_info/rss_list.json
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# IDE 설정
+.idea/
+
+# 세션 로컬 파일
+.claude/
+
+# 실시간/런타임 뉴스 데이터 (코드가 아님 - 추적 제외, 폴더 내 .py 스크립트는 예외로 추적)
+news_back_up/*.json
+news_final_future_schedules.json
+news_list_blacklisted.json
+news_list_filtered.json
+news_list_stream.json
+
+# 파이프라인 산출물
+extracted_schedule/
