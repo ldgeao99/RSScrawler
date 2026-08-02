@@ -138,6 +138,7 @@ def push_schedules_to_firestore(schedule_results: list):
                 "category": _to_firestore_value("일반"),
                 "isImportant": _to_firestore_value(False),
                 "eventName": _to_firestore_value(event_name),
+                "title": _to_firestore_value(news.get("title", "")),
                 "detail": _to_firestore_value(news.get("details", "")),
                 "relatedStocks": _to_firestore_value(news.get("relatedStocks", "")),
                 "url": _to_firestore_value(news.get("link", "")),
