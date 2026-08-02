@@ -19,6 +19,13 @@ from cost_tracker import CostTracker
 # ==========================================================
 # ⚙️ 파일 경로 설정
 # ==========================================================
+def get_file_paths_for_date_str(date_str: str):
+    """'YYMMDD' 문자열을 받아 그 날짜의 백업 입력 파일과 산출 파일 경로를 반환한다."""
+    input_file = f"news_back_up/news_list_filtered_backup_{date_str}.json"
+    output_file = f"extracted_schedule/extracted_schedules_{date_str}.json"
+    return input_file, output_file
+
+
 def get_yesterday_file_paths():
     """
     전일(어제, KST 기준) 날짜의 백업 파일을 입력으로, 같은 날짜의 산출 파일 경로를 반환한다.
@@ -27,10 +34,7 @@ def get_yesterday_file_paths():
     """
     kst_tz = timezone(timedelta(hours=9))
     yesterday = datetime.now(kst_tz) - timedelta(days=1)
-    date_str = yesterday.strftime("%y%m%d")
-    input_file = f"news_back_up/news_list_filtered_backup_{date_str}.json"
-    output_file = f"extracted_schedule/extracted_schedules_{date_str}.json"
-    return input_file, output_file
+    return get_file_paths_for_date_str(yesterday.strftime("%y%m%d"))
 
 # ==========================================================
 # 🔥 Firebase(Firestore) 연동 설정
@@ -556,4 +560,16 @@ if __name__ == "__main__":
 
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(main())
+
+    # 수동 재실행용: python schedule_extraction_scheduler.py 260731
+    # -> news_back_up/news_list_filtered_backup_260731.json 을 대상으로 실행
+    manual_input_file, manual_output_file = None, None
+    if len(sys.argv) > 1:
+        date_arg = sys.argv[1].strip()
+        if not re.fullmatch(r"\d{6}", date_arg):
+            logger.error(f"❌ 날짜 인자는 'YYMMDD' 6자리 숫자여야 합니다 (입력값: '{date_arg}')")
+            sys.exit(1)
+        manual_input_file, manual_output_file = get_file_paths_for_date_str(date_arg)
+        logger.info(f"🛠️ [수동 실행] 지정 날짜 '{date_arg}' 대상으로 파이프라인을 가동합니다: '{manual_input_file}'")
+
+    asyncio.run(main(input_file=manual_input_file, output_file=manual_output_file))
