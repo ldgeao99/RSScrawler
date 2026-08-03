@@ -84,8 +84,10 @@ def send_telegram_notification(items):
         lines.append(f'⭐ <a href="{link}">{title}</a>')
 
     # 메시지 길이 제한에 맞춰 청크 분할
+    # 💡 모바일 푸시 알림 미리보기는 메시지 맨 앞부분만 보여주므로,
+    # 헤더 문구 없이 뉴스 제목이 바로 첫 줄에 오도록 한다.
     chunks = []
-    current = "🔥 <b>키워드 포착 뉴스</b>\n\n"
+    current = ""
     for line in lines:
         if len(current) + len(line) + 2 > TELEGRAM_MAX_MESSAGE_LEN:
             chunks.append(current)
