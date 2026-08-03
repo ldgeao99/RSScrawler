@@ -76,10 +76,12 @@ def send_telegram_notification(items):
 
     lines = []
     for item in items:
-        title = html.escape(item.get("title", ""))
-        source = html.escape(item.get("source", ""))
+        # RSS 피드에서 이미 &quot; 같은 HTML 엔티티가 한 번 덜 풀린 채로 들어오는 경우가 있어
+        # 먼저 unescape로 실제 문자(")로 되돌린 뒤, 텔레그램 HTML 파싱용으로 다시 escape한다.
+        raw_title = html.unescape(item.get("title", ""))
+        title = html.escape(raw_title)
         link = item.get("link", "")
-        lines.append(f'⭐ <a href="{link}">{title}</a>\n   <i>{source}</i>')
+        lines.append(f'⭐ <a href="{link}">{title}</a>')
 
     # 메시지 길이 제한에 맞춰 청크 분할
     chunks = []
