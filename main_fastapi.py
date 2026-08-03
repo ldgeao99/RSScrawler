@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import html
 import time
 import calendar  # ★ 시간대 보정을 위해 추가된 표준 라이브러리
 import random
@@ -58,6 +59,56 @@ logger = logging.getLogger("news_logger")
 MEM_READ_COUNT = 100  # index.html 요청 혹은 새로고침 시 메모리에서 읽어와 화면에 채울 뉴스 개수
 DEFAULT_CHECK_INTERVAL = 30
 PORT = 8080
+# ====================================================
+
+# ====================================================
+# 📨 [텔레그램] 키워드 포착 뉴스 실시간 알림
+# ====================================================
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+TELEGRAM_MAX_MESSAGE_LEN = 3500  # 텔레그램 4096자 제한 대비 여유
+
+
+def send_telegram_notification(items):
+    """키워드 포착된 신규 기사를 텔레그램으로 실시간 전송. 설정 없으면 조용히 스킵."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not items:
+        return
+
+    lines = []
+    for item in items:
+        title = html.escape(item.get("title", ""))
+        source = html.escape(item.get("source", ""))
+        link = item.get("link", "")
+        lines.append(f'⭐ <a href="{link}">{title}</a>\n   <i>{source}</i>')
+
+    # 메시지 길이 제한에 맞춰 청크 분할
+    chunks = []
+    current = "🔥 <b>키워드 포착 뉴스</b>\n\n"
+    for line in lines:
+        if len(current) + len(line) + 2 > TELEGRAM_MAX_MESSAGE_LEN:
+            chunks.append(current)
+            current = ""
+        current += line + "\n\n"
+    if current.strip():
+        chunks.append(current)
+
+    for chunk in chunks:
+        try:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": chunk,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                logger.warning(f"⚠️ 텔레그램 전송 실패 ({resp.status_code}): {resp.text[:200]}")
+        except Exception as e:
+            logger.warning(f"⚠️ 텔레그램 전송 에러: {e}")
+
 # ====================================================
 
 RSS_DB_FILE = "base_info/rss_list.json"
@@ -496,6 +547,9 @@ def rss_monitor_thread():
                     cached_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
 
                 print(f"🏁 [결과 요약] 탐색 완료 ➔ 실시간 유입: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
+
+                if new_filtered_items:
+                    send_telegram_notification(new_filtered_items)
             else:
                 print(f"🏁 [결과 요약] 탐색 완료 ➔ 변동 없음")
 
