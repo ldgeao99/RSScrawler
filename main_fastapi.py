@@ -338,6 +338,7 @@ def rss_monitor_thread():
     print("📢 RSS 실시간 백그라운드 관제 엔진이 가동되었습니다.")
 
     session = requests.Session()
+    is_first_scan = True  # 서버 재시작 직후 첫 스캔은 다운타임 동안 밀린 기사가 한꺼번에 잡히므로 텔레그램 알림만 건너뜀
 
     while True:
         try:
@@ -548,8 +549,10 @@ def rss_monitor_thread():
 
                 print(f"🏁 [결과 요약] 탐색 완료 ➔ 실시간 유입: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
 
-                if new_filtered_items:
+                if new_filtered_items and not is_first_scan:
                     send_telegram_notification(new_filtered_items)
+                elif new_filtered_items and is_first_scan:
+                    print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
             else:
                 print(f"🏁 [결과 요약] 탐색 완료 ➔ 변동 없음")
 
@@ -557,6 +560,8 @@ def rss_monitor_thread():
 
         except Exception as e:
             print(f"❌ RSS 수집 루프 내부 크리티컬 에러: {e}")
+        finally:
+            is_first_scan = False
 
         time.sleep(DEFAULT_CHECK_INTERVAL)
 
