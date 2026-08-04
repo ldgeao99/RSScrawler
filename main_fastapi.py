@@ -77,6 +77,16 @@ SENTIMENT_EMOJI = {
 }
 
 
+def shorten_telegram_link(link: str) -> str:
+    """
+    일부 해외 매체(FinancialJuice 등)는 기사 제목을 그대로 슬러그로 붙여 URL이 지나치게 길다.
+    슬러그는 장식용이라 잘라내도 같은 기사로 정상 접속되므로, 텔레그램 전송용으로만 축약한다.
+    (저장/화면 표시용 원본 link는 그대로 유지되고, 이 함수는 텔레그램 메시지 조립 시에만 쓰인다.)
+    """
+    match = re.match(r'^(https?://www\.financialjuice\.com/News/\d+)/', link)
+    return f"{match.group(1)}/" if match else link
+
+
 def send_telegram_notification(items):
     """키워드 포착된 신규 기사를 텔레그램으로 실시간 전송. 설정 없으면 조용히 스킵."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not items:
@@ -90,7 +100,7 @@ def send_telegram_notification(items):
         # 먼저 unescape로 실제 문자(")로 되돌린 뒤, 텔레그램 HTML 파싱용으로 다시 escape한다.
         raw_title = html.unescape(item.get("title", ""))
         title = html.escape(raw_title)
-        link = html.escape(item.get("link", ""))
+        link = html.escape(shorten_telegram_link(item.get("link", "")))
         emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
