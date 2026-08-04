@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>해외 노이즈 격리 보관소 (휴지통)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .news-entry {
+            animation: slideDown 0.35s ease-out forwards;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 격리 유입 시의 동적 번쩍임 */
+        @keyframes flash-red {
+            0% { color: #f43f5e; text-shadow: 0 0 8px rgba(244, 63, 94, 0.6); transform: scale(1.03); }
+            100% { color: #94a3b8; text-shadow: none; transform: scale(1); }
+        }
+        .flash-active {
+            animation: flash-red 1.2s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans h-screen w-screen flex flex-col overflow-hidden">
+
+    <!-- 상단 전용 헤더 -->
+    <header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-3 lg:py-4 flex flex-col lg:flex-row gap-2 lg:gap-0 lg:justify-between lg:items-center shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="text-xl shrink-0">🗑️</span>
+            <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex flex-wrap items-center gap-2 min-w-0">
+                해외 노이즈 격리 보관소
+                <span class="text-xs text-rose-400 font-bold bg-rose-950/60 border border-rose-900/40 px-2.5 py-0.5 rounded-full shrink-0">노이즈 원천차단 모드</span>
+            </h1>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+            <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
+                🚪 창 닫기
+            </button>
+        </div>
+    </header>
+
+    <!-- 중앙 타임라인 전체 영역 -->
+    <main class="flex-1 overflow-hidden p-3 lg:p-6 max-w-[1200px] w-full mx-auto flex flex-col">
+        <div class="bg-slate-900/40 border border-slate-900 rounded-2xl p-3 lg:p-5 flex flex-col flex-1 overflow-hidden">
+
+            <!-- 정보 바 -->
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-3 lg:mb-4 shrink-0 border-b border-slate-900 pb-3">
+                <div class="flex flex-wrap items-center gap-2 lg:gap-3">
+                    <span class="text-rose-500">●</span>
+                    <span class="text-[11px] lg:text-xs text-slate-400 font-semibold">제외(블랙리스트) 단어 필터링에 걸려 원천 차단된 쓰레기 뉴스들입니다.</span>
+                    <span id="live-time-indicator" class="font-mono text-xs text-rose-400 font-bold ml-2"></span>
+                </div>
+                <!-- 🟢 index.html과 완전하게 규격 및 색상 감각을 맞춘 듀얼 배지 시스템 -->
+                <div class="flex items-center gap-4 text-xs text-slate-400 font-medium shrink-0">
+                    <div class="flex items-center gap-1.5">
+                        <span>현재 노출 건수:</span>
+                        <span id="trash-render-count"
+                              class="bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded border border-rose-500/20 font-bold font-mono">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 border-l border-slate-800 pl-3">
+                        <span>이틀간 총 수집 건수:</span>
+                        <span id="trash-count"
+                              class="bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full border border-slate-700 font-black font-mono">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 기사 리스트 -->
+            <div id="trash-news-container" class="flex-1 overflow-y-auto space-y-4 pr-1.5">
+                <div class="text-slate-600 text-xs py-24 text-center">차단 데이터 확인 중... 격리된 노이즈 기사가 없습니다.</div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-slate-900 border-t border-slate-800 px-8 py-3 text-xs text-slate-500 flex justify-between items-center shrink-0">
+        <div>상태: <span class="text-rose-400 font-bold">● 노이즈 분석 세이프가드 정상 가동 중</span></div>
+        <div class="font-mono text-[10px] text-slate-600">30s 엔진 주기 자동 폴링 동기화 적용됨</div>
+    </footer>
+
+    <script>
+    const renderedLinks = new Set();
+    let excludeKeywords = [];
+
+    let trashOffset = 0;
+    let isTrashLoading = false;
+
+    // 정규식 특수문자 이스케이프 안전 장치 함수
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    async function fetchExcludeKeywords() {
+        try {
+            const res = await fetch('/api/global-blacklist');
+            const data = await res.json();
+            excludeKeywords = Array.isArray(data) ? data : [];
+        } catch (e) {
+            console.error("제외 키워드 로드 실패:", e);
+            excludeKeywords = [];
+        }
+    }
+
+    function createTrashCard(item) {
+        if (!item || !item.title) return "";
+
+        const timestamp = item.timestamp ? item.timestamp : Math.floor(Date.now() / 1000);
+        const dateObj = new Date(timestamp * 1000);
+        const timeFormatted = dateObj.toTimeString().split(' ')[0];
+        const sourceName = item.source || "알 수 없음";
+        const itemLink = item.link || "#";
+
+        let titleHtml = item.title;
+
+        if (excludeKeywords.length > 0) {
+            excludeKeywords.forEach(kw => {
+                if (kw && kw.trim()) {
+                    try {
+                        const safeKw = escapeRegExp(kw.trim());
+                        const regex = new RegExp(`(${safeKw})`, 'g');
+                        titleHtml = titleHtml.replace(regex, `<span class="bg-rose-500/10 text-rose-400 px-1 py-0.5 rounded border border-rose-500/20 font-bold">$1</span>`);
+                    } catch (err) {
+                        // 개별 키워드 오류 시 패스
+                    }
+                }
+            });
+        }
+
+        return `
+            <div class="news-entry bg-slate-900/40 hover:bg-slate-900 border border-slate-800 p-4 rounded-xl transition-all duration-200" data-link="${itemLink}">
+                <div class="flex items-center gap-3 mb-2 justify-between">
+                    <div class="flex items-center gap-2.5">
+                        <span class="bg-rose-950/40 border border-rose-900/40 text-rose-400 text-[10px] font-black px-2 py-0.5 rounded tracking-wide">
+                            ${sourceName}
+                        </span>
+                        <span class="text-[10px] text-slate-500 font-mono font-bold">${timeFormatted}</span>
+                    </div>
+                </div>
+                <h3 class="text-xs md:text-sm font-semibold text-slate-400 leading-relaxed">
+                    <a href="${itemLink}" target="_blank" class="hover:text-rose-400 hover:underline transition-colors block">
+                        ${titleHtml}
+                    </a>
+                </h3>
+            </div>
+        `;
+    }
+
+    function triggerTimeUpdateFlash() {
+        const timeBadge = document.getElementById('live-time-indicator');
+        if (!timeBadge) return;
+        const now = new Date();
+        timeBadge.textContent = `최근 갱신: ${now.toLocaleTimeString()}`;
+
+        timeBadge.classList.remove('flash-active');
+        void timeBadge.offsetWidth;
+        timeBadge.classList.add('flash-active');
+    }
+
+    // 🚀 1. 초기 데이터 로드 (첫 화면 진입 시 호출)
+    async function loadInitialNews() {
+        try {
+            await fetchExcludeKeywords();
+            renderedLinks.clear();
+            trashOffset = 0;
+
+            const res = await fetch(`/api/global-blacklisted-news?offset=${trashOffset}`);
+            const responseData = await res.json();
+
+            const newsList = responseData && responseData.news ? responseData.news : [];
+            const totalCount = responseData && responseData.total_count ? responseData.total_count : 0;
+
+            const container = document.getElementById('trash-news-container');
+
+            // 💡 핵심 수정: 초기 적재 시 무조건 컨테이너 내부 텍스트(차단 데이터 확인 중...)를 밀어버림
+            container.innerHTML = "";
+
+            if (newsList.length > 0) {
+                let html = "";
+                const sorted = [...newsList].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                sorted.forEach(item => {
+                    if(item && item.link) {
+                        renderedLinks.add(item.link);
+                        html += createTrashCard(item);
+                    }
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<div class="text-slate-600 text-xs py-24 text-center">깨끗합니다! 차단된 기사가 존재하지 않습니다.</div>';
+            }
+
+            document.getElementById('trash-count').textContent = totalCount;
+            trashOffset = container.querySelectorAll('.news-entry').length;
+            document.getElementById('trash-render-count').textContent = trashOffset;
+
+            triggerTimeUpdateFlash();
+        } catch (e) {
+            console.error("차단 목록 초기 로드 실패:", e);
+            document.getElementById('trash-news-container').innerHTML = '<div class="text-rose-400 text-xs py-24 text-center">데이터 로드 중 통신 오류가 발생했습니다.</div>';
+        }
+    }
+
+    // 🚀 2. 실시간 상단 유입 모니터링 (3초 주기 호출)
+    async function updateLiveNews() {
+        try {
+            const res = await fetch('/api/global-blacklisted-news?offset=0');
+            const responseData = await res.json();
+
+            const newsList = responseData && responseData.news ? responseData.news : [];
+            const totalCount = responseData && responseData.total_count ? responseData.total_count : 0;
+
+            const container = document.getElementById('trash-news-container');
+            let anyNewItem = false;
+
+            if (newsList.length > 0) {
+                // 상단 유입을 위해 과거순(오래된 기사부터 최신순으로 복사) 정렬
+                const sorted = [...newsList].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+                sorted.forEach(item => {
+                    if (!item || !item.link || renderedLinks.has(item.link)) return;
+                    renderedLinks.add(item.link);
+
+                    const cardContent = createTrashCard(item);
+                    if(!cardContent) return;
+
+                    const temp = document.createElement('div');
+                    temp.innerHTML = cardContent;
+
+                    // 빈 화면 안내 문구가 있으면 삭제
+                    const noDataElement = container.querySelector('.text-slate-600');
+                    if (noDataElement) {
+                        container.innerHTML = "";
+                    }
+
+                    // 최신 뉴스는 리스트 최상단(firstChild)에 삽입
+                    if (container.firstChild && container.querySelector('.news-entry')) {
+                        container.insertBefore(temp.firstElementChild, container.firstChild);
+                    } else {
+                        container.appendChild(temp.firstElementChild);
+                    }
+                    anyNewItem = true;
+                    trashOffset++;
+                });
+            }
+
+            document.getElementById('trash-count').textContent = totalCount;
+            document.getElementById('trash-render-count').textContent = container.querySelectorAll('.news-entry').length;
+
+            if (anyNewItem) {
+                triggerTimeUpdateFlash();
+            }
+        } catch (e) {
+            console.error("차단 실시간 갱신 실패:", e);
+        }
+    }
+
+    // 🚀 3. 스크롤 하단 도달 시 과거 데이터 추가 페이징 로드
+    async function loadMorePastTrash() {
+        if (isTrashLoading) return;
+        isTrashLoading = true;
+
+        try {
+            const res = await fetch(`/api/global-blacklisted-news?offset=${trashOffset}`);
+            const responseData = await res.json();
+
+            const newsList = responseData && responseData.news ? responseData.news : [];
+            const totalCount = responseData && responseData.total_count ? responseData.total_count : 0;
+
+            if (newsList.length > 0) {
+                const container = document.getElementById('trash-news-container');
+                let html = "";
+
+                newsList.forEach(item => {
+                    if (!item || !item.link || renderedLinks.has(item.link)) return;
+                    renderedLinks.add(item.link);
+                    html += createTrashCard(item);
+                });
+
+                if (html) {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = html;
+                    while (temp.firstChild) {
+                        container.appendChild(temp.firstChild);
+                    }
+                }
+                trashOffset = container.querySelectorAll('.news-entry').length;
+                document.getElementById('trash-render-count').textContent = trashOffset;
+                document.getElementById('trash-count').textContent = totalCount;
+            }
+        } catch (e) {
+            console.error("과거 차단 뉴스 무한스크롤 로드 실패:", e);
+        }
+        isTrashLoading = false;
+    }
+
+    // DOM 로드 및 이벤트 리스너 바인딩
+    window.addEventListener('DOMContentLoaded', async () => {
+        await loadInitialNews();
+        setInterval(updateLiveNews, 3000);
+
+        const scrollContainer = document.getElementById('trash-news-container');
+        if (scrollContainer) {
+            scrollContainer.addEventListener('scroll', function() {
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - 40) {
+                    loadMorePastTrash();
+                }
+            });
+        }
+    });
+</script>
+</body>
+</html>

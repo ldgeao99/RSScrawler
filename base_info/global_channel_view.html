@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>해외 채널 전용 실시간 관제 스트림</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .news-entry {
+            animation: slideDown 0.35s ease-out forwards;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 신규 유입 시 번쩍임 이펙트 */
+        @keyframes flash-green {
+            0% { color: #10b981; text-shadow: 0 0 8px rgba(16, 185, 129, 0.6); transform: scale(1.03); }
+            100% { color: #10b981; text-shadow: none; transform: scale(1); }
+        }
+        .flash-active {
+            animation: flash-green 1.2s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans h-screen w-screen flex flex-col overflow-hidden">
+
+    <!-- 상단 전용 헤더 -->
+    <header class="bg-slate-900 border-b border-slate-800 px-8 py-4 flex justify-between items-center shrink-0">
+        <div class="flex items-center gap-3">
+            <span class="text-xl">📡</span>
+            <h1 class="text-base font-extrabold tracking-wide text-white flex items-center gap-2">
+                <span id="channel-title-badge" class="text-blue-400 font-black"></span>
+                실시간 채널 전용 관제 스트림
+                <span class="text-[10px] bg-blue-950/80 text-blue-400 px-2.5 py-0.5 rounded-full border border-blue-800 font-normal">Dedicated Stream</span>
+            </h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+                🚪 창 닫기
+            </button>
+            <a href="/global" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg font-bold transition-all shadow-sm">
+                🏠 메인 감시센터로 가기
+            </a>
+        </div>
+    </header>
+
+    <!-- 중앙 타임라인 전체 영역 -->
+    <main class="flex-1 overflow-hidden p-6 max-w-[1200px] w-full mx-auto flex flex-col">
+        <div class="bg-slate-900/40 border border-slate-900 rounded-2xl p-5 flex flex-col flex-1 overflow-hidden">
+
+            <!-- 서브 정보란 -->
+            <div class="flex justify-between items-center mb-4 shrink-0 border-b border-slate-900 pb-3">
+                <div class="flex items-center gap-3">
+                    <span class="text-emerald-400">●</span>
+                    <span class="text-xs text-slate-400 font-semibold">본 채널로부터 유입된 신규 속보가 타임라인 순으로 출력됩니다.</span>
+                    <span id="live-time-indicator" class="font-mono text-xs text-emerald-400 font-bold ml-2"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-500 font-semibold">금일 누적 스트림 수</span>
+                    <span id="channel-count" class="text-xs bg-blue-500/10 text-blue-400 px-2.5 py-0.5 rounded-full border border-blue-500/20 font-black">0</span>
+                </div>
+            </div>
+
+            <!-- 기사가 스크롤 영역에 큼직하게 렌더링 -->
+            <div id="channel-news-container" class="flex-1 overflow-y-auto space-y-4 pr-1.5">
+                <div class="text-slate-600 text-xs py-24 text-center">동기화 중입니다... 해당 채널에서 뉴스가 들어오길 기다리는 중입니다.</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 간단한 상태 표시 푸터 -->
+    <footer class="bg-slate-900 border-t border-slate-800 px-8 py-3 text-xs text-slate-500 flex justify-between items-center shrink-0">
+        <div>상태: <span class="text-emerald-400 font-bold">● 실시간 채널 파이프 연결 상태 양호</span></div>
+        <div class="font-mono text-[10px] text-slate-600">30s 엔진 주기 자동 폴링 동기화 적용됨</div>
+    </footer>
+
+    <script>
+        const renderedLinks = new Set();
+        let targetKeywords = [];
+
+        // URL 쿼리 파라미터에서 타겟 채널명 추출
+        const urlParams = new URLSearchParams(window.location.search);
+        const sourceName = urlParams.get('source');
+
+        // 타이틀 바인딩
+        document.title = `[${sourceName || '알 수 없음'}] 실시간 모니터링 스트림`;
+        document.getElementById('channel-title-badge').textContent = `[${sourceName || '선택 없음'}]`;
+
+        async function fetchKeywords() {
+            try {
+                const res = await fetch('/api/global-keywords');
+                targetKeywords = await res.json();
+            } catch (e) {
+                console.error("키워드 로드 실패:", e);
+            }
+        }
+
+        function createNewsCard(item) {
+            const dateObj = new Date(item.timestamp * 1000);
+            const timeFormatted = dateObj.toTimeString().split(' ')[0];
+
+            let titleHtml = item.title;
+
+            targetKeywords.forEach(kw => {
+                if (kw.trim()) {
+                    const regex = new RegExp(`(${kw})`, 'g');
+                    titleHtml = titleHtml.replace(regex, `<span class="bg-amber-400/10 text-amber-400 px-1.5 py-1 rounded border border-amber-400/20 font-bold">$1</span>`);
+                }
+            });
+
+            return `
+                <div class="news-entry bg-slate-900/50 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 p-5 rounded-xl transition-all duration-200">
+                    <div class="flex items-center gap-3 mb-2.5">
+                        <span class="bg-blue-900/30 border border-blue-800 text-blue-400 text-[10px] font-black px-2.5 py-0.5 rounded tracking-wide">
+                            ${item.source}
+                        </span>
+                        <span class="text-[11px] text-slate-500 font-mono font-bold">${timeFormatted}</span>
+                    </div>
+                    <h3 class="text-sm md:text-base font-semibold text-slate-100 leading-relaxed">
+                        <a href="${item.link}" target="_blank" class="hover:text-blue-400 hover:underline transition-colors block">
+                            ${titleHtml}
+                        </a>
+                    </h3>
+                </div>
+            `;
+        }
+
+        // 새 뉴스 유입 시 상단 타임 지시계 애니메이션 갱신
+        function triggerTimeUpdateFlash() {
+            const timeBadge = document.getElementById('live-time-indicator');
+            const now = new Date();
+            timeBadge.textContent = `최근 갱신: ${now.toLocaleTimeString()}`;
+
+            timeBadge.classList.remove('flash-active');
+            void timeBadge.offsetWidth;
+            timeBadge.classList.add('flash-active');
+        }
+
+        function isItemFromSelectedSource(item) {
+            if (!sourceName) return false;
+            return item.source === sourceName || item.source.includes(`(${sourceName})`);
+        }
+
+        async function loadInitialNews() {
+            try {
+                await fetchKeywords();
+
+                const res = await fetch('/api/global-news');
+                const newsList = await res.json();
+                const container = document.getElementById('channel-news-container');
+                let html = "";
+
+                const sorted = [...newsList].sort((a, b) => b.timestamp - a.timestamp);
+                let renderCount = 0;
+
+                sorted.forEach(item => {
+                    renderedLinks.add(item.link);
+                    if (isItemFromSelectedSource(item)) {
+                        html += createNewsCard(item);
+                        renderCount++;
+                    }
+                });
+
+                container.innerHTML = html || '<div class="text-slate-600 text-xs py-24 text-center">오늘 해당 채널로부터 수집된 기사가 존재하지 않습니다. 신규 뉴스가 들어올 때까지 열어두셔도 좋습니다.</div>';
+                document.getElementById('channel-count').textContent = renderCount;
+
+                if (renderCount > 0) {
+                    triggerTimeUpdateFlash();
+                }
+
+            } catch (e) {
+                console.error("채널 전용 뷰어 로드 실패:", e);
+            }
+        }
+
+        async function updateLiveNews() {
+            try {
+                const res = await fetch('/api/global-news');
+                const newsList = await res.json();
+                const container = document.getElementById('channel-news-container');
+                const sorted = [...newsList].sort((a, b) => a.timestamp - b.timestamp);
+                let anyNewItem = false;
+
+                sorted.forEach(item => {
+                    if (renderedLinks.has(item.link)) return;
+                    renderedLinks.add(item.link);
+
+                    if (isItemFromSelectedSource(item)) {
+                        const cardContent = createNewsCard(item);
+                        const temp = document.createElement('div');
+                        temp.innerHTML = cardContent;
+
+                        if (container.firstChild && container.querySelector('.news-entry')) {
+                            container.insertBefore(temp.firstElementChild, container.firstChild);
+                        } else {
+                            container.innerHTML = "";
+                            container.appendChild(temp.firstElementChild);
+                        }
+                        anyNewItem = true;
+                    }
+                });
+
+                if (anyNewItem) {
+                    const totalCount = container.querySelectorAll('.news-entry').length;
+                    document.getElementById('channel-count').textContent = totalCount;
+                    triggerTimeUpdateFlash();
+                }
+
+            } catch (e) {
+                console.error("채널 실시간 갱신 실패:", e);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadInitialNews();
+            setInterval(updateLiveNews, 2000);
+        });
+    </script>
+</body>
+</html>

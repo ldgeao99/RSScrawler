@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>해외 키워드 카테고리 관리 센터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col overflow-x-hidden">
+
+<header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-3 lg:py-4 flex flex-col lg:flex-row gap-2 lg:gap-0 lg:justify-between lg:items-center shrink-0">
+    <div class="flex items-center gap-3 min-w-0">
+        <span class="text-xl shrink-0">⚙️</span>
+        <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex flex-wrap items-center gap-2 min-w-0">
+            해외 포착 감시 키워드 관리 센터 (카테고리 분할 모드)
+            <span class="text-xs text-blue-400 font-bold bg-blue-950/60 border border-blue-900/40 px-2.5 py-0.5 rounded-full shrink-0">설정 모드</span>
+        </h1>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+        <button onclick="window.close()"
+                class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
+            🚪 창 닫기
+        </button>
+    </div>
+</header>
+
+<main class="flex-1 w-full max-w-5xl mx-auto p-6 space-y-6">
+
+    <div class="bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-[11px] text-slate-400">
+        💡 <code class="text-blue-300">/패턴/</code> 처럼 슬래시로 감싸면 정규표현식으로 등록됩니다 (예: <code class="text-blue-300">/삼성.*전자/</code>). 그 외엔 지금처럼 일반 텍스트로 매칭됩니다.
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- 기타 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-blue-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>⚙️</span> 기타 키워드 <span class="text-[10px] text-slate-500 font-normal">(속보, 인물 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-etc" placeholder="키워드 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-blue-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('etc')">
+                    <button onclick="addCategorized('etc')"
+                            class="bg-blue-600 hover:bg-blue-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-etc" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 섹터 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>📊</span> 섹터 키워드 <span class="text-[10px] text-slate-500 font-normal">(반도체, 조선 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-sector" placeholder="섹터명 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-emerald-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('sector')">
+                    <button onclick="addCategorized('sector')"
+                            class="bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-sector" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 🇰🇷 국내 기업명 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🇰🇷</span> 국내 기업명 <span class="text-[10px] text-slate-500 font-normal">(삼성전자, 현대차 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-company_kr" placeholder="국내 상장사 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-purple-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('company_kr')">
+                    <button onclick="addCategorized('company_kr')"
+                            class="bg-purple-600 hover:bg-purple-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-company_kr" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 🌐 해외 기업명 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🌐</span> 해외 기업명 <span class="text-[10px] text-slate-500 font-normal">(엔비디아, 도요타, 소니 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-global_company" placeholder="해외 상장사 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-indigo-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('global_company')">
+                    <button onclick="addCategorized('global_company')"
+                            class="bg-indigo-600 hover:bg-indigo-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-global_company" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 해외 증권사 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🏛️</span> 해외 증권사 <span class="text-[10px] text-slate-500 font-normal">(골드만삭스, JP모건 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-brokerage" placeholder="기관 영문/국문명 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-amber-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('brokerage')">
+                    <button onclick="addCategorized('brokerage')"
+                            class="bg-amber-600 hover:bg-amber-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-brokerage" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 📈 실적 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-cyan-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>📈</span> 실적 키워드 <span class="text-[10px] text-slate-500 font-normal">(영업이익, 어닝 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-performance" placeholder="실적 키워드 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-cyan-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('performance')">
+                    <button onclick="addCategorized('performance')"
+                            class="bg-cyan-600 hover:bg-cyan-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-performance" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 🟢 텔레그램 호재 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-green-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🟢</span> 텔레그램 호재 키워드 <span class="text-[10px] text-slate-500 font-normal">(서프라이즈, 사상 최대 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-positive" placeholder="텔레그램 호재 키워드 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-green-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('positive')">
+                    <button onclick="addCategorized('positive')"
+                            class="bg-green-600 hover:bg-green-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-positive" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 🔴 텔레그램 악재 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🔴</span> 텔레그램 악재 키워드 <span class="text-[10px] text-slate-500 font-normal">(적자전환, 리콜 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-negative" placeholder="텔레그램 악재 키워드 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-red-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('negative')">
+                    <button onclick="addCategorized('negative')"
+                            class="bg-red-600 hover:bg-red-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-negative" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+    </div>
+
+    <!-- 제외 키워드 설정 박스 -->
+    <div class="bg-slate-900 border border-slate-850 p-6 rounded-2xl shadow-xl space-y-4">
+        <div>
+            <h3 class="text-xs font-black text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span>⛔</span> 감시 제외 단어 등록 (차단 키워드)
+            </h3>
+            <p class="text-[10px] text-slate-500 mt-0.5">※ 여기에 지정된 소음 제거용 어구가 제목에 포착되면 알림 대상에서 강력 차단 제어됩니다.</p>
+        </div>
+        <div class="flex gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <input type="text" id="new-blacklist-input" placeholder="제외할 노이즈 단어 입력..."
+                   class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-rose-500 text-slate-100 placeholder:text-slate-600"
+                   onkeypress="if(event.key === 'Enter') addBlacklist()">
+            <button onclick="addBlacklist()"
+                    class="bg-rose-600 hover:bg-rose-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-colors shrink-0">
+                추가
+            </button>
+        </div>
+        <div id="blacklist-tags" class="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1"></div>
+    </div>
+</main>
+
+<footer class="bg-slate-900 border-t border-slate-800 px-8 py-3.5 text-xs text-slate-500 flex justify-between items-center shrink-0">
+    <a href="/global-rss-settings" target="_blank" class="text-emerald-400 hover:underline text-xs font-bold">📡 RSS 채널 설정 페이지로 가기</a>
+    <a href="/global"
+       class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-100 px-5 py-1.5 rounded-lg font-bold transition-all shadow-lg">
+        설정 완료 및 나가기
+    </a>
+</footer>
+
+<script>
+        let categorizedKeywords = { etc: [], sector: [], company_kr: [], global_company: [], brokerage: [], performance: [], positive: [], negative: [] };
+        let blacklist = [];
+
+        // 카테고리별 한글 명칭 매핑 오프젝트
+        const categoryNames = {
+            etc: "기타 키워드",
+            sector: "섹터 키워드",
+            company_kr: "국내 기업명",
+            global_company: "해외 기업명",
+            brokerage: "해외 증권사",
+            performance: "실적 키워드",
+            positive: "텔레그램 호재 키워드",
+            negative: "텔레그램 악재 키워드"
+        };
+
+        // '/패턴/'처럼 슬래시로 감싼 키워드는 정규식으로 취급되므로(백엔드 keyword_matches()와 동일 규칙),
+        // 저장하기 전에 실제로 컴파일되는지 미리 검증해서 잘못된 정규식이 등록되는 걸 막는다.
+        function validateKeywordInput(kw) {
+            if (kw.length > 2 && kw.startsWith('/') && kw.endsWith('/')) {
+                try {
+                    new RegExp(kw.slice(1, -1));
+                } catch (e) {
+                    alert(`❌ 정규식 형식이 올바르지 않습니다: ${e.message}`);
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        async function loadKeywords() {
+            try {
+                const res = await fetch('/api/global-keywords?mode=raw');
+                categorizedKeywords = await res.json();
+                renderCategoryTags();
+            } catch (err) {
+                console.error("키워드 로드 실패:", err);
+            }
+        }
+
+        // 💡 [성능] 카테고리 하나(국내 기업명 등)에 수천 개 태그가 있으면 전부 한 번에 DOM에
+        // 그려서 창 크기 조절 시 레이아웃 재계산이 버벅였음. 처음엔 일부만 그리고,
+        // 스크롤이 바닥에 닿을 때마다 다음 묶음을 추가로 그린다.
+        const CATEGORY_LIST = ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"];
+        const CATEGORY_STYLES = {
+            etc: "bg-blue-950/40 text-blue-300 border-blue-900/60",
+            sector: "bg-emerald-950/40 text-emerald-300 border-emerald-900/60",
+            company_kr: "bg-purple-950/40 text-purple-300 border-purple-900/60",
+            global_company: "bg-indigo-950/40 text-indigo-300 border-indigo-900/60",
+            brokerage: "bg-amber-950/40 text-amber-300 border-amber-900/60",
+            performance: "bg-cyan-950/40 text-cyan-300 border-cyan-900/60",
+            positive: "bg-green-950/40 text-green-300 border-green-900/60",
+            negative: "bg-red-950/40 text-red-300 border-red-900/60"
+        };
+        const RENDER_BATCH_SIZE = 50;
+        const renderedCounts = {}; // cat -> 지금까지 화면에 그려둔 개수
+
+        function renderCategoryTags() {
+            CATEGORY_LIST.forEach(cat => {
+                const list = categorizedKeywords[cat] || [];
+                renderedCounts[cat] = Math.min(RENDER_BATCH_SIZE, list.length);
+                renderCategoryBatch(cat);
+            });
+        }
+
+        function renderCategoryBatch(cat) {
+            const container = document.getElementById(`tags-${cat}`);
+            if (!container) return;
+
+            const list = categorizedKeywords[cat] || [];
+            container.innerHTML = '';
+
+            if (list.length === 0) {
+                container.innerHTML = '<span class="text-slate-600 text-[10px] py-1">등록 없음</span>';
+                return;
+            }
+
+            const count = renderedCounts[cat] || Math.min(RENDER_BATCH_SIZE, list.length);
+            for (let index = 0; index < count; index++) {
+                const kw = list[index];
+                const tag = document.createElement('span');
+                tag.className = `inline-flex items-center gap-1 bg-slate-950 text-[11px] px-2.5 py-1 rounded border font-semibold ${CATEGORY_STYLES[cat]}`;
+                tag.innerHTML = `
+                    <span>${kw}</span>
+                    <button onclick="deleteCategorized('${cat}', ${index})" class="text-red-400 hover:text-red-300 font-bold ml-1 text-xs">&times;</button>
+                `;
+                container.appendChild(tag);
+            }
+
+            if (count < list.length) {
+                const moreTag = document.createElement('span');
+                moreTag.className = 'text-slate-600 text-[10px] py-1 w-full text-center';
+                moreTag.textContent = `⏳ 스크롤하면 더 불러옵니다 (${count}/${list.length})`;
+                container.appendChild(moreTag);
+            }
+        }
+
+        function loadMoreCategoryTags(cat) {
+            const list = categorizedKeywords[cat] || [];
+            const current = renderedCounts[cat] || RENDER_BATCH_SIZE;
+            if (current >= list.length) return;
+            renderedCounts[cat] = Math.min(current + RENDER_BATCH_SIZE, list.length);
+            renderCategoryBatch(cat);
+        }
+
+        function setupCategoryInfiniteScroll() {
+            CATEGORY_LIST.forEach(cat => {
+                const container = document.getElementById(`tags-${cat}`);
+                if (!container) return;
+                container.addEventListener('scroll', () => {
+                    if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                        loadMoreCategoryTags(cat);
+                    }
+                });
+            });
+        }
+
+        async function addCategorized(cat) {
+            const input = document.getElementById(`input-${cat}`);
+            const kw = input.value.trim();
+
+            if (!kw) {
+                alert("추가할 키워드를 입력해 주세요.");
+                return;
+            }
+
+            if (!validateKeywordInput(kw)) return;
+
+            if (!categorizedKeywords[cat]) {
+                categorizedKeywords[cat] = [];
+            }
+
+            if (categorizedKeywords[cat].includes(kw)) {
+                alert(`'${kw}'은(는) 이미 등록된 키워드입니다.`);
+                return;
+            }
+
+            // 임시 데이터 복사본 생성 후 백엔드 전송 (새 키워드는 맨 앞에 추가해서 바로 눈에 띄게)
+            const tempKeywords = JSON.parse(JSON.stringify(categorizedKeywords));
+            tempKeywords[cat].unshift(kw);
+
+            const isSuccess = await updateKeywordsBackend(tempKeywords);
+            if (isSuccess) {
+                categorizedKeywords[cat].unshift(kw);
+                renderedCounts[cat] = Math.min((renderedCounts[cat] || RENDER_BATCH_SIZE) + 1, categorizedKeywords[cat].length);
+                input.value = '';
+                renderCategoryBatch(cat);
+                alert(`✨ [${categoryNames[cat]}] 에 '${kw}' 키워드가 추가되었습니다!`);
+            }
+        }
+
+        async function deleteCategorized(cat, index) {
+            if (categorizedKeywords[cat] && categorizedKeywords[cat][index] !== undefined) {
+                const targetKw = categorizedKeywords[cat][index];
+
+                if (!confirm(`[${categoryNames[cat]}]의 '${targetKw}' 키워드를 정말 삭제하시겠습니까?`)) return;
+
+                // 임시 데이터 복사본 생성 후 해당 아이템 제거
+                const tempKeywords = JSON.parse(JSON.stringify(categorizedKeywords));
+                tempKeywords[cat].splice(index, 1);
+
+                const isSuccess = await updateKeywordsBackend(tempKeywords);
+                if (isSuccess) {
+                    categorizedKeywords[cat].splice(index, 1);
+                    renderCategoryTags();
+                    alert(`🗑️ [${categoryNames[cat]}] 에서 '${targetKw}' 키워드가 삭제되었습니다.`);
+                }
+            }
+        }
+
+        async function updateKeywordsBackend(dataToSend) {
+            try {
+                const response = await fetch('/api/global-keywords', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToSend)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 상태 코드: ${response.status}`);
+                }
+                return true;
+            } catch (err) {
+                console.error("키워드 저장 실패:", err);
+                alert(`❌ 백엔드 키워드 반영에 실패했습니다.\n사유: ${err.message}`);
+                return false;
+            }
+        }
+
+        async function loadBlacklist() {
+            try {
+                const res = await fetch('/api/global-blacklist');
+                blacklist = await res.json();
+                renderBlacklistTags();
+            } catch (err) {
+                console.error("제외 키워드 로드 실패:", err);
+            }
+        }
+
+        let renderedBlacklistCount = RENDER_BATCH_SIZE;
+
+        function renderBlacklistTags() {
+            renderedBlacklistCount = Math.min(RENDER_BATCH_SIZE, blacklist.length);
+            renderBlacklistBatch();
+        }
+
+        function renderBlacklistBatch() {
+            const container = document.getElementById('blacklist-tags');
+            container.innerHTML = '';
+
+            if (blacklist.length === 0) {
+                container.innerHTML = '<span class="text-slate-600 text-[10px] py-1">등록된 제외 단어가 없습니다.</span>';
+                return;
+            }
+
+            const count = renderedBlacklistCount || Math.min(RENDER_BATCH_SIZE, blacklist.length);
+            for (let index = 0; index < count; index++) {
+                const bl = blacklist[index];
+                const tag = document.createElement('span');
+                tag.className = "inline-flex items-center gap-1 bg-rose-950/30 text-rose-300 text-[11px] px-2.5 py-1 rounded border border-rose-900/50 font-semibold";
+                tag.innerHTML = `
+                    <span>${bl}</span>
+                    <button onclick="deleteBlacklist(${index})" class="text-red-400 hover:text-red-300 font-bold ml-1 text-xs">&times;</button>
+                `;
+                container.appendChild(tag);
+            }
+
+            if (count < blacklist.length) {
+                const moreTag = document.createElement('span');
+                moreTag.className = 'text-slate-600 text-[10px] py-1 w-full text-center';
+                moreTag.textContent = `⏳ 스크롤하면 더 불러옵니다 (${count}/${blacklist.length})`;
+                container.appendChild(moreTag);
+            }
+        }
+
+        function setupBlacklistInfiniteScroll() {
+            const container = document.getElementById('blacklist-tags');
+            if (!container) return;
+            container.addEventListener('scroll', () => {
+                if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                    if (renderedBlacklistCount < blacklist.length) {
+                        renderedBlacklistCount = Math.min(renderedBlacklistCount + RENDER_BATCH_SIZE, blacklist.length);
+                        renderBlacklistBatch();
+                    }
+                }
+            });
+        }
+
+        async function addBlacklist() {
+            const input = document.getElementById('new-blacklist-input');
+            const bl = input.value.trim();
+
+            if (!bl) {
+                alert("제외할 단어를 입력해 주세요.");
+                return;
+            }
+
+            if (!validateKeywordInput(bl)) return;
+
+            if (blacklist.includes(bl)) {
+                alert("이미 등록된 제외 단어입니다.");
+                return;
+            }
+
+            const updatedList = [bl, ...blacklist];
+            const isSuccess = await updateBlacklistBackend(updatedList);
+
+            if (isSuccess) {
+                blacklist.unshift(bl);
+                renderedBlacklistCount = Math.min(renderedBlacklistCount + 1, blacklist.length);
+                input.value = '';
+                renderBlacklistBatch();
+                alert("🎉 제외 단어가 성공적으로 등록되었습니다!");
+            }
+        }
+
+        async function deleteBlacklist(index) {
+            const targetBl = blacklist[index];
+
+            if (!confirm(`제외 단어 '${targetBl}' 를 정말 삭제하시겠습니까?`)) return;
+
+            const updatedList = [...blacklist];
+            updatedList.splice(index, 1);
+
+            const isSuccess = await updateBlacklistBackend(updatedList);
+
+            if (isSuccess) {
+                blacklist.splice(index, 1);
+                renderBlacklistTags();
+                alert(`🗑️ 제외 단어 '${targetBl}' 가 성공적으로 삭제되었습니다.`);
+            }
+        }
+
+        async function updateBlacklistBackend(dataToSend) {
+            try {
+                const response = await fetch('/api/global-blacklist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToSend)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 상태 코드: ${response.status}`);
+                }
+
+                return true;
+            } catch (err) {
+                console.error("제외 단어 저장 실패:", err);
+                alert(`❌ 저장에 실패했습니다.\n사유: ${err.message}`);
+                return false;
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadKeywords();
+            await loadBlacklist();
+            setupCategoryInfiniteScroll();
+            setupBlacklistInfiniteScroll();
+        });
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>실시간 뉴스 감시 대시보드</title>
+    <title>해외 뉴스 감시 대시보드</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         ::-webkit-scrollbar { width: 6px; }
@@ -34,9 +34,9 @@
     <!-- 상단 간결한 헤더 (동기화 완료 배지 상단 매핑 완료) -->
     <header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-2 lg:py-4 flex flex-col lg:flex-row gap-1.5 lg:gap-0 lg:justify-between lg:items-center shrink-0">
         <div class="flex items-center gap-3 flex-1 min-w-0">
-            <span class="text-xl">🎯</span>
+            <span class="text-xl">🌐</span>
             <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex items-center gap-2 shrink-0">
-                실시간 뉴스 시그널 감시센터
+                해외 뉴스 시그널 감시센터
                 <span class="hidden lg:inline-block text-[10px] bg-slate-800 text-blue-400 px-2.5 py-0.5 rounded-full border border-slate-700 font-normal">Active</span>
             </h1>
             <!-- 🟢 [요청사항 반영] 동기화 타임 배지가 상단 헤더 영역으로 깔끔하게 이동했습니다 -->
@@ -46,21 +46,21 @@
             <!-- 채널별 전용 감시 모드일 때 보여줄 배지 -->
             <div id="filter-status-badge" class="hidden items-center gap-2 bg-blue-950/80 border border-blue-800 px-3 py-1 rounded-lg text-xs text-blue-300 ml-3">
                 <span id="active-source-name" class="font-extrabold"></span> 전용 채널 관제 중
-                <a href="/" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-black transition-colors">전체보기</a>
+                <a href="/global" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-black transition-colors">전체보기</a>
             </div>
         </div>
         <div class="flex items-center gap-2 lg:gap-3 shrink-0 overflow-x-auto lg:overflow-visible -mx-1 px-1 lg:mx-0 lg:px-0">
-            <a href="/trash-view" target="_blank" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/40 text-[10px] lg:text-xs text-rose-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 whitespace-nowrap shrink-0">
+            <a href="/global-trash-view" target="_blank" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/40 text-[10px] lg:text-xs text-rose-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 whitespace-nowrap shrink-0">
                 🗑️ 격리 보관소
             </a>
-            <a href="/keyword-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
+            <a href="/global-keyword-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
                 🎯 키워드 제어
             </a>
-            <a href="/rss-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
+            <a href="/global-rss-settings" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
                 📡 RSS 관리
             </a>
-            <a href="/global" target="_blank" class="bg-indigo-950/40 hover:bg-indigo-900 border border-indigo-900/40 text-[10px] lg:text-xs text-indigo-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 whitespace-nowrap shrink-0">
-                🌐 해외 뉴스
+            <a href="/" target="_blank" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-200 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
+                🏠 국내 뉴스
             </a>
         </div>
     </header>
@@ -145,7 +145,7 @@
 
         async function fetchKeywords() {
             try {
-                const res = await fetch('/api/keywords');
+                const res = await fetch('/api/global-keywords');
                 targetKeywords = await res.json();
                 buildCombinedKeywordRegex();
             } catch (e) {
@@ -248,7 +248,7 @@
                 filteredOffset = 0;
 
                 // 1) 전체 뉴스 초기화
-                const streamRes = await fetch(`/api/realtime-news?offset=${streamOffset}`);
+                const streamRes = await fetch(`/api/global-realtime-news?offset=${streamOffset}`);
                 const streamData = await streamRes.json();
                 document.getElementById('stream-count').textContent = streamData.total_count;
 
@@ -263,7 +263,7 @@
                 document.getElementById('stream-render-count').textContent = streamOffset;
 
                 // 2) 키워드 뉴스 초기화
-                const filteredRes = await fetch(`/api/filtered-news?offset=${filteredOffset}`);
+                const filteredRes = await fetch(`/api/global-filtered-news?offset=${filteredOffset}`);
                 const filteredData = await filteredRes.json();
                 document.getElementById('filtered-count').textContent = filteredData.total_count;
 
@@ -288,7 +288,7 @@
         async function updateLiveNews() {
             try {
                 // 상단 유입은 항상 가장 최신판(offset=0) 상자에서 새로 들어온 기사만 체크합니다.
-                const streamRes = await fetch('/api/realtime-news?offset=0');
+                const streamRes = await fetch('/api/global-realtime-news?offset=0');
                 const streamData = await streamRes.json();
                 document.getElementById('stream-count').textContent = streamData.total_count;
 
@@ -315,7 +315,7 @@
                 });
                 document.getElementById('stream-render-count').textContent = streamContainer.querySelectorAll('.news-entry').length;
 
-                const filteredRes = await fetch('/api/filtered-news?offset=0');
+                const filteredRes = await fetch('/api/global-filtered-news?offset=0');
                 const filteredData = await filteredRes.json();
                 document.getElementById('filtered-count').textContent = filteredData.total_count;
 
@@ -353,7 +353,7 @@
                 if (isFilteredLoading) return;
                 isFilteredLoading = true;
                 try {
-                    const res = await fetch(`/api/filtered-news?offset=${filteredOffset}`);
+                    const res = await fetch(`/api/global-filtered-news?offset=${filteredOffset}`);
                     const data = await res.json();
                     if (data.news && data.news.length > 0) {
                         const container = document.getElementById('filtered-news-container');
@@ -377,7 +377,7 @@
                 if (isStreamLoading) return;
                 isStreamLoading = true;
                 try {
-                    const res = await fetch(`/api/realtime-news?offset=${streamOffset}`);
+                    const res = await fetch(`/api/global-realtime-news?offset=${streamOffset}`);
                     const data = await res.json();
                     if (data.news && data.news.length > 0) {
                         const container = document.getElementById('stream-news-container');

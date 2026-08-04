@@ -8,6 +8,9 @@ firebase_site/
 base_info/keyword_list_exclude.json
 base_info/keyword_list_include.json
 base_info/rss_list.json
+base_info/global_keyword_list_exclude.json
+base_info/global_keyword_list_include.json
+base_info/global_rss_list.json
 
 # 파이썬 캐시
 __pycache__/
@@ -25,6 +28,10 @@ news_final_future_schedules.json
 news_list_blacklisted.json
 news_list_filtered.json
 news_list_stream.json
+global_news_final_future_schedules.json
+global_news_list_blacklisted.json
+global_news_list_filtered.json
+global_news_list_stream.json
 
 # 파이프라인 산출물
 extracted_schedule/

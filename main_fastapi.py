@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 # 🚀 분리한 백업/일정추출 스케줄러 모듈 임포트
 import back_up_scheduler
+import global_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
 
@@ -122,6 +123,14 @@ FILTERED_NEWS_FILE = "news_list_filtered.json"
 STREAM_NEWS_FILE = "news_list_stream.json"
 BLACKLISTED_NEWS_FILE = "news_list_blacklisted.json"
 
+# 🌐 [해외 뉴스] 국내 파이프라인과 완전히 분리된 별도의 DB/캐시 파일 세트
+GLOBAL_RSS_DB_FILE = "base_info/global_rss_list.json"
+GLOBAL_KEYWORD_DB_FILE = "base_info/global_keyword_list_include.json"
+GLOBAL_BLACKLIST_DB_FILE = "base_info/global_keyword_list_exclude.json"
+GLOBAL_FILTERED_NEWS_FILE = "global_news_list_filtered.json"
+GLOBAL_STREAM_NEWS_FILE = "global_news_list_stream.json"
+GLOBAL_BLACKLISTED_NEWS_FILE = "global_news_list_blacklisted.json"
+
 DEFAULT_CATEGORIZED_KEYWORDS = {
     "etc": ["속보", "트럼프", "이란", "단독", "특징주", "계약", "대통령", "美", "젠슨황", "중", "北"],
     "sector": ["반도체", "조선"],
@@ -137,6 +146,14 @@ DEFAULT_RSS_CHANNELS = [
     {"name": "연합뉴스", "url": "https://www.yonhapnewstv.co.kr/category/news/feed/", "enabled": True},
     {"name": "매일경제", "url": "https://www.mk.co.kr/rss/30000001/", "enabled": True}
 ]
+
+# 🌐 [해외 뉴스] 아직 확정된 채널/키워드가 없으므로 빈 값으로 시작 (설정 화면에서 직접 구성)
+DEFAULT_GLOBAL_CATEGORIZED_KEYWORDS = {
+    "etc": [], "sector": [], "company_kr": [], "global_company": [], "brokerage": [],
+    "performance": [], "positive": [], "negative": []
+}
+DEFAULT_GLOBAL_BLACKLIST = []
+DEFAULT_GLOBAL_RSS_CHANNELS = []
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -194,10 +211,10 @@ def _safe_atomic_write(file_path, data):
             os.remove(temp_file)
 
 
-def load_keywords():
-    if os.path.exists(KEYWORD_DB_FILE):
+def load_keywords(file_path=KEYWORD_DB_FILE, default=DEFAULT_CATEGORIZED_KEYWORDS):
+    if os.path.exists(file_path):
         try:
-            with open(KEYWORD_DB_FILE, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 migrated = {"etc": [], "sector": [], "company_kr": [], "global_company": [], "brokerage": [],
                             "performance": [], "positive": [], "negative": []}
@@ -221,10 +238,10 @@ def load_keywords():
                 return data
         except Exception:
             pass
-    return DEFAULT_CATEGORIZED_KEYWORDS
+    return default
 
 
-def save_keywords(keywords): _safe_atomic_write(KEYWORD_DB_FILE, keywords)
+def save_keywords(keywords, file_path=KEYWORD_DB_FILE): _safe_atomic_write(file_path, keywords)
 
 
 def keyword_matches(kw: str, title: str) -> bool:
@@ -241,33 +258,33 @@ def keyword_matches(kw: str, title: str) -> bool:
     return kw in title
 
 
-def load_blacklist():
-    if os.path.exists(BLACKLIST_DB_FILE):
+def load_blacklist(file_path=BLACKLIST_DB_FILE, default=DEFAULT_BLACKLIST):
+    if os.path.exists(file_path):
         try:
-            with open(BLACKLIST_DB_FILE, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
-    return DEFAULT_BLACKLIST
+    return default
 
 
-def save_blacklist(blacklist): _safe_atomic_write(BLACKLIST_DB_FILE, blacklist)
+def save_blacklist(blacklist, file_path=BLACKLIST_DB_FILE): _safe_atomic_write(file_path, blacklist)
 
 
-def load_rss():
-    if os.path.exists(RSS_DB_FILE):
+def load_rss(file_path=RSS_DB_FILE, default=DEFAULT_RSS_CHANNELS):
+    if os.path.exists(file_path):
         try:
-            with open(RSS_DB_FILE, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 for item in data:
                     if "enabled" not in item: item["enabled"] = True
                 return data
         except Exception:
             pass
-    return DEFAULT_RSS_CHANNELS
+    return default
 
 
-def save_rss(rss_list): _safe_atomic_write(RSS_DB_FILE, rss_list)
+def save_rss(rss_list, file_path=RSS_DB_FILE): _safe_atomic_write(file_path, rss_list)
 
 
 def load_file_entire_content(file_path):
@@ -313,6 +330,17 @@ cached_blacklisted = []
 
 rss_response_status = {}
 
+# 🌐 [해외 뉴스] 국내 파이프라인과 동일한 락(db_lock)을 공유하되, 완전히 별도의 캐시/키워드/RSS 목록을 사용
+cached_global_keywords = load_keywords(GLOBAL_KEYWORD_DB_FILE, DEFAULT_GLOBAL_CATEGORIZED_KEYWORDS)
+cached_global_blacklist = load_blacklist(GLOBAL_BLACKLIST_DB_FILE, DEFAULT_GLOBAL_BLACKLIST)
+cached_global_rss = load_rss(GLOBAL_RSS_DB_FILE, DEFAULT_GLOBAL_RSS_CHANNELS)
+
+cached_global_stream = []
+cached_global_filtered = []
+cached_global_blacklisted = []
+
+global_rss_response_status = {}
+
 # ====================================================
 # 🪐 [이 위치로 이동] 백업 스케줄러 자원 매핑 데이터 준비
 # ====================================================
@@ -325,6 +353,17 @@ MEMORY_CACHES_CONFIG = {
     "stream": cached_stream,      # 이제 정상적으로 인식됩니다!
     "filtered": cached_filtered,
     "blacklisted": cached_blacklisted
+}
+
+FILE_PATHS_CONFIG_GLOBAL = {
+    "stream": GLOBAL_STREAM_NEWS_FILE,
+    "filtered": GLOBAL_FILTERED_NEWS_FILE,
+    "blacklisted": GLOBAL_BLACKLISTED_NEWS_FILE
+}
+MEMORY_CACHES_CONFIG_GLOBAL = {
+    "stream": cached_global_stream,
+    "filtered": cached_global_filtered,
+    "blacklisted": cached_global_blacklisted
 }
 
 app = FastAPI(
@@ -350,12 +389,34 @@ def print_resource_status():
     print("======================================================================\n")
 
 
+def print_global_resource_status():
+    global cached_global_stream, cached_global_filtered, cached_global_blacklisted
+    print("\n📊 [🌐 해외 뉴스 리소스 메모리 적재 모니터링 브리핑]")
+    print("----------------------------------------------------------------------")
+    print(f"    └ 메모리 변수 : global_stream_news      ({len(cached_global_stream):,d}건)")
+    print(f"    └ 메모리 변수 : global_filtered_news    ({len(cached_global_filtered):,d}건)")
+    print(f"    └ 메모리 변수 : global_blacklisted_news ({len(cached_global_blacklisted):,d}건)")
+    print("======================================================================\n")
+
+
 # ----------------------------------------------------
 # 📡 실시간 RSS 뉴스 수집 백그라운드 데몬 스레드
+# (국내/해외 두 파이프라인이 동일한 로직을 서로 다른 캐시·파일 세트로 각자 구동한다)
 # ----------------------------------------------------
-def rss_monitor_thread():
-    global cached_filtered, cached_stream, cached_blacklisted, rss_response_status
-    print("📢 RSS 실시간 백그라운드 관제 엔진이 가동되었습니다.")
+def rss_monitor_thread(
+    cached_rss_ref,
+    cached_keywords_ref,
+    cached_blacklist_ref,
+    cached_stream_ref,
+    cached_filtered_ref,
+    cached_blacklisted_ref,
+    response_status_ref,
+    stream_file,
+    filtered_file,
+    blacklisted_file,
+    label="",
+):
+    print(f"📢 {label}RSS 실시간 백그라운드 관제 엔진이 가동되었습니다.")
 
     session = requests.Session()
     is_first_scan = True  # 서버 재시작 직후 첫 스캔은 다운타임 동안 밀린 기사가 한꺼번에 잡히므로 텔레그램 알림만 건너뜀
@@ -377,13 +438,13 @@ def rss_monitor_thread():
             # 🛠️ [무결성 보정] 매 스캔 턴마다 동적으로 풀 구성
             seen_links = set()
             with db_lock:
-                for item in cached_stream: seen_links.add(item["link"])
-                for item in cached_filtered: seen_links.add(item["link"])
-                for item in cached_blacklisted: seen_links.add(item["link"])
+                for item in cached_stream_ref: seen_links.add(item["link"])
+                for item in cached_filtered_ref: seen_links.add(item["link"])
+                for item in cached_blacklisted_ref: seen_links.add(item["link"])
 
-                target_channels = [dict(ch) for ch in cached_rss]
-                categorized_kw = dict(cached_keywords)
-                current_blacklist = list(cached_blacklist)
+                target_channels = [dict(ch) for ch in cached_rss_ref]
+                categorized_kw = dict(cached_keywords_ref)
+                current_blacklist = list(cached_blacklist_ref)
 
             flat_keywords = set()
             for key in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"]:
@@ -403,7 +464,7 @@ def rss_monitor_thread():
 
                 if not url: continue
                 if not enabled:
-                    with db_lock: rss_response_status[url] = "OFF"
+                    with db_lock: response_status_ref[url] = "OFF"
                     continue
 
                 print(f" 🔍 [{name}] 피드 연결 중...", end="", flush=True)
@@ -429,7 +490,7 @@ def rss_monitor_thread():
 
                     response = session.get(request_url, headers=headers, impersonate="chrome", timeout=10)
                     with db_lock:
-                        rss_response_status[url] = response.status_code
+                        response_status_ref[url] = response.status_code
                     response.raise_for_status()
                     print(f" ➔ 🟢 {response.status_code} OK")
 
@@ -470,9 +531,14 @@ def rss_monitor_thread():
                                     if match_dt:
                                         target_date_str = match_dt.group(0)
                                         dt_obj = datetime.strptime(target_date_str, "%Y-%m-%d %H:%M:%S")
-                                        dt_kst = dt_obj.replace(tzinfo=timezone(timedelta(hours=9)))
+                                        if "investing.com" in url:
+                                            # 💡 인베스팅닷컴 피드의 pubDate는 타임존 표기가 없지만 실제로는 UTC 기준이라
+                                            # 그대로 KST로 취급하면 9시간이 밀린다. UTC로 해석한 뒤 KST로 변환한다.
+                                            dt_kst = dt_obj.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
+                                        else:
+                                            dt_kst = dt_obj.replace(tzinfo=timezone(timedelta(hours=9)))
                                         news_timestamp = int(dt_kst.timestamp())
-                                        news_time_str = target_date_str
+                                        news_time_str = dt_kst.strftime("%Y-%m-%d %H:%M:%S")
                                         news_date_obj = dt_kst.date()
                                     else:
                                         raise ValueError("순수 날짜 형태 정규식 내부 추출 실패")
@@ -565,21 +631,21 @@ def rss_monitor_thread():
                     # 📡 [채널 단위 즉시 반영] 전체 채널을 다 돌 때까지 기다리지 않고,
                     # 이 채널의 신규 기사가 생기는 즉시 캐시/파일에 반영해 브라우저가 바로 받아갈 수 있게 한다.
                     if new_stream_items or new_filtered_items or new_blacklisted_items:
-                        _safe_atomic_append_write(STREAM_NEWS_FILE, new_stream_items)
-                        _safe_atomic_append_write(FILTERED_NEWS_FILE, new_filtered_items)
-                        _safe_atomic_append_write(BLACKLISTED_NEWS_FILE, new_blacklisted_items)
+                        _safe_atomic_append_write(stream_file, new_stream_items)
+                        _safe_atomic_append_write(filtered_file, new_filtered_items)
+                        _safe_atomic_append_write(blacklisted_file, new_blacklisted_items)
 
                         with db_lock:
                             if new_stream_items:
-                                for idx, item in enumerate(new_stream_items): cached_stream.insert(idx, item)
+                                for idx, item in enumerate(new_stream_items): cached_stream_ref.insert(idx, item)
                             if new_filtered_items:
-                                for idx, item in enumerate(new_filtered_items): cached_filtered.insert(idx, item)
+                                for idx, item in enumerate(new_filtered_items): cached_filtered_ref.insert(idx, item)
                             if new_blacklisted_items:
-                                for idx, item in enumerate(new_blacklisted_items): cached_blacklisted.insert(idx, item)
+                                for idx, item in enumerate(new_blacklisted_items): cached_blacklisted_ref.insert(idx, item)
 
-                            cached_stream.sort(key=lambda x: x["timestamp"], reverse=True)
-                            cached_filtered.sort(key=lambda x: x["timestamp"], reverse=True)
-                            cached_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
+                            cached_stream_ref.sort(key=lambda x: x["timestamp"], reverse=True)
+                            cached_filtered_ref.sort(key=lambda x: x["timestamp"], reverse=True)
+                            cached_blacklisted_ref.sort(key=lambda x: x["timestamp"], reverse=True)
 
                         print(f"    └ 📡 [{name}] 신규 기사 즉시 반영 ➔ 실시간: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
 
@@ -604,7 +670,8 @@ def rss_monitor_thread():
             else:
                 print(f"🏁 [결과 요약] 탐색 완료 ➔ 변동 없음")
 
-            print_resource_status()
+            print(f"\n📊 [{label}시스템 리소스 메모리 적재 모니터링 브리핑]")
+            print(f"    └ stream: {len(cached_stream_ref):,d}건 | filtered: {len(cached_filtered_ref):,d}건 | blacklisted: {len(cached_blacklisted_ref):,d}건")
 
         except Exception as e:
             print(f"❌ RSS 수집 루프 내부 크리티컬 에러: {e}")
@@ -643,6 +710,33 @@ async def get_rss_settings():
     return FileResponse("base_info/rss_settings.html")
 
 
+# 🌐 [해외 뉴스] 국내 화면과 완전히 분리된 별도 페이지 세트
+@app.get("/global")
+@app.get("/global-index.html")
+async def get_global_dashboard():
+    return FileResponse("base_info/global_index.html")
+
+
+@app.get("/global-channel-view")
+async def get_global_channel_view():
+    return FileResponse("base_info/global_channel_view.html")
+
+
+@app.get("/global-trash-view")
+async def get_global_trash_view():
+    return FileResponse("base_info/global_trash_view.html")
+
+
+@app.get("/global-keyword-settings")
+async def get_global_keyword_settings():
+    return FileResponse("base_info/global_keyword_settings.html")
+
+
+@app.get("/global-rss-settings")
+async def get_global_rss_settings():
+    return FileResponse("base_info/global_rss_settings.html")
+
+
 def _get_safe_memory_data(source_list, offset: int = 0):
     safe_list = []
     snapshot = list(source_list)
@@ -675,6 +769,24 @@ def get_blacklisted_news(offset: int = 0):
     return _get_safe_memory_data(current_data, offset)
 
 
+@app.get("/api/global-realtime-news")
+def get_global_all_news(offset: int = 0):
+    with db_lock: current_data = list(cached_global_stream)
+    return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/global-filtered-news")
+def get_global_filtered_news(offset: int = 0):
+    with db_lock: current_data = list(cached_global_filtered)
+    return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/global-blacklisted-news")
+def get_global_blacklisted_news(offset: int = 0):
+    with db_lock: current_data = list(cached_global_blacklisted)
+    return _get_safe_memory_data(current_data, offset)
+
+
 @app.get("/api/keywords")
 async def get_keywords(mode: str = "flat"):
     global cached_keywords
@@ -690,6 +802,23 @@ async def get_keywords(mode: str = "flat"):
 async def get_blacklist():
     global cached_blacklist
     with db_lock: return cached_blacklist
+
+
+@app.get("/api/global-keywords")
+async def get_global_keywords(mode: str = "flat"):
+    global cached_global_keywords
+    with db_lock:
+        if mode == "raw": return cached_global_keywords
+        flat = []
+        for k in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance"]:
+            flat.extend(cached_global_keywords.get(k, []))
+        return flat
+
+
+@app.get("/api/global-blacklist")
+async def get_global_blacklist():
+    global cached_global_blacklist
+    with db_lock: return cached_global_blacklist
 
 
 @app.get("/api/rss")
@@ -722,32 +851,138 @@ async def get_rss_channels():
         return response_channels
 
 
+@app.get("/api/global-rss")
+async def get_global_rss_channels():
+    kst_tz = timezone(timedelta(hours=9))
+    now_kst = datetime.now(kst_tz)
+    today_start = datetime.combine(now_kst.date(), datetime.min.time(), tzinfo=kst_tz).timestamp()
+
+    with db_lock:
+        response_channels = []
+        for ch in cached_global_rss:
+            ch_url = ch.get("url", "")
+            ch_name = ch.get("name", "수집 채널")
+            ch_status = global_rss_response_status.get(ch_url, "-")
+
+            today_links = set()
+            for source_list in (cached_global_stream, cached_global_filtered, cached_global_blacklisted):
+                for item in source_list:
+                    if item.get("source") == ch_name and item.get("timestamp", 0) >= today_start:
+                        today_links.add(item.get("link"))
+            today_count = len(today_links)
+
+            response_channels.append(
+                {"name": ch_name, "url": ch_url, "enabled": ch.get("enabled", True), "today_count": today_count,
+                 "status_code": ch_status})
+        return response_channels
+
+
+KEYWORD_CATEGORY_KEYS = ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"]
+
+
+def _flatten_categorized_keywords(categorized: dict) -> set:
+    flat = set()
+    for k in KEYWORD_CATEGORY_KEYS:
+        flat.update(kw.strip() for kw in categorized.get(k, []) if kw.strip())
+    return flat
+
+
+def _promote_newly_matched_keywords(new_keywords, positive_set, negative_set, stream_ref, filtered_ref, filtered_file):
+    """
+    신규로 등록된 감시 키워드에 걸리는 기사를 실시간 스트림에서 찾아
+    키워드 포착 피드(필터링 목록)로 소급 편입시킨다. (db_lock을 보유한 상태에서 호출되어야 함)
+    필터링 목록은 스트림의 부분집합 개념(원본은 스트림에 그대로 남는다)이라
+    스트림에서는 제거하지 않고 필터링 목록에만 추가한다.
+    """
+    if not new_keywords:
+        return
+
+    existing_filtered_links = {item["link"] for item in filtered_ref}
+    promoted_items = []
+
+    for item in stream_ref:
+        if item["link"] in existing_filtered_links:
+            continue
+        title = item.get("title", "")
+        matched_kws = [kw for kw in new_keywords if kw.strip() and keyword_matches(kw.strip(), title)]
+        if not matched_kws:
+            continue
+
+        has_positive = any(kw in positive_set for kw in matched_kws)
+        has_negative = any(kw in negative_set for kw in matched_kws)
+        if has_positive and has_negative:
+            item["sentiment"] = "mixed"
+        elif has_positive:
+            item["sentiment"] = "positive"
+        elif has_negative:
+            item["sentiment"] = "negative"
+        else:
+            item["sentiment"] = "neutral"
+
+        promoted_items.append(item)
+        existing_filtered_links.add(item["link"])
+
+    if not promoted_items:
+        return
+
+    filtered_ref[:0] = promoted_items
+    filtered_ref.sort(key=lambda x: x["timestamp"], reverse=True)
+    _safe_atomic_append_write(filtered_file, promoted_items)
+
+    print(f"⭐ [소급 포착조치] 신규 등록 키워드로 {len(promoted_items)}건의 기사를 키워드 포착 피드로 편입했습니다.")
+
+
 @app.post("/api/keywords")
 async def post_keywords(updated_categorized: dict):
     global cached_keywords
     with db_lock:
+        newly_added = list(_flatten_categorized_keywords(updated_categorized) - _flatten_categorized_keywords(cached_keywords))
+
         cached_keywords.clear()
         cached_keywords.update(updated_categorized)
         save_keywords(cached_keywords)
+
+        positive_set = set(cached_keywords.get("positive", []))
+        negative_set = set(cached_keywords.get("negative", []))
+        _promote_newly_matched_keywords(newly_added, positive_set, negative_set,
+                                         cached_stream, cached_filtered, FILTERED_NEWS_FILE)
     return {"status": "success"}
 
 
-def _relocate_newly_blacklisted(new_keywords):
+@app.post("/api/global-keywords")
+async def post_global_keywords(updated_categorized: dict):
+    global cached_global_keywords
+    with db_lock:
+        newly_added = list(_flatten_categorized_keywords(updated_categorized) - _flatten_categorized_keywords(cached_global_keywords))
+
+        cached_global_keywords.clear()
+        cached_global_keywords.update(updated_categorized)
+        save_keywords(cached_global_keywords, GLOBAL_KEYWORD_DB_FILE)
+
+        positive_set = set(cached_global_keywords.get("positive", []))
+        negative_set = set(cached_global_keywords.get("negative", []))
+        _promote_newly_matched_keywords(newly_added, positive_set, negative_set,
+                                         cached_global_stream, cached_global_filtered, GLOBAL_FILTERED_NEWS_FILE)
+    return {"status": "success"}
+
+
+def _relocate_newly_blacklisted(new_keywords, stream_ref, filtered_ref, blacklisted_ref,
+                                 stream_file, filtered_file, blacklisted_file):
     """
     신규로 등록된 제외 키워드에 걸리는 기사를 실시간/필터링 피드에서 걷어내
     격리 보관소로 소급 이동시킨다. (db_lock을 보유한 상태에서 호출되어야 함)
     신규 키워드에 한해서만 검사하므로 전체 재검사 대비 부하가 크지 않다.
+    국내/해외 파이프라인이 각자의 캐시·파일 세트를 넘겨 동일 로직을 공유한다.
     """
-    global cached_stream, cached_filtered, cached_blacklisted
     if not new_keywords:
         return
 
-    existing_blacklisted_links = {item["link"] for item in cached_blacklisted}
+    existing_blacklisted_links = {item["link"] for item in blacklisted_ref}
     moved_items = []
     remaining_stream = []
     remaining_filtered = []
 
-    for item in cached_stream:
+    for item in stream_ref:
         title = item.get("title", "")
         if any(keyword_matches(kw, title) for kw in new_keywords):
             if item["link"] not in existing_blacklisted_links:
@@ -758,7 +993,7 @@ def _relocate_newly_blacklisted(new_keywords):
 
     moved_links = {item["link"] for item in moved_items}
 
-    for item in cached_filtered:
+    for item in filtered_ref:
         if item["link"] in moved_links:
             continue
         title = item.get("title", "")
@@ -773,14 +1008,14 @@ def _relocate_newly_blacklisted(new_keywords):
     if not moved_items:
         return
 
-    cached_stream[:] = remaining_stream
-    cached_filtered[:] = remaining_filtered
-    cached_blacklisted[:0] = moved_items
-    cached_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
+    stream_ref[:] = remaining_stream
+    filtered_ref[:] = remaining_filtered
+    blacklisted_ref[:0] = moved_items
+    blacklisted_ref.sort(key=lambda x: x["timestamp"], reverse=True)
 
-    _safe_atomic_write(STREAM_NEWS_FILE, remaining_stream)
-    _safe_atomic_write(FILTERED_NEWS_FILE, remaining_filtered)
-    _safe_atomic_append_write(BLACKLISTED_NEWS_FILE, moved_items)
+    _safe_atomic_write(stream_file, remaining_stream)
+    _safe_atomic_write(filtered_file, remaining_filtered)
+    _safe_atomic_append_write(blacklisted_file, moved_items)
 
     print(f"🗑️ [소급 격리조치] 신규 제외 키워드로 {len(moved_items)}건의 기사를 격리 보관소로 이동했습니다.")
 
@@ -797,12 +1032,30 @@ async def post_blacklist(updated_blacklist: list = Body(...)):
         cached_blacklist.extend(updated_blacklist)
         save_blacklist(cached_blacklist)
 
-        _relocate_newly_blacklisted(newly_added)
+        _relocate_newly_blacklisted(newly_added, cached_stream, cached_filtered, cached_blacklisted,
+                                     STREAM_NEWS_FILE, FILTERED_NEWS_FILE, BLACKLISTED_NEWS_FILE)
+    return {"status": "success"}
+
+
+@app.post("/api/global-blacklist")
+async def post_global_blacklist(updated_blacklist: list = Body(...)):
+    global cached_global_blacklist
+    with db_lock:
+        old_set = {kw.strip() for kw in cached_global_blacklist if kw.strip()}
+        new_set = {kw.strip() for kw in updated_blacklist if kw.strip()}
+        newly_added = list(new_set - old_set)
+
+        cached_global_blacklist.clear()
+        cached_global_blacklist.extend(updated_blacklist)
+        save_blacklist(cached_global_blacklist, GLOBAL_BLACKLIST_DB_FILE)
+
+        _relocate_newly_blacklisted(newly_added, cached_global_stream, cached_global_filtered, cached_global_blacklisted,
+                                     GLOBAL_STREAM_NEWS_FILE, GLOBAL_FILTERED_NEWS_FILE, GLOBAL_BLACKLISTED_NEWS_FILE)
     return {"status": "success"}
 
 
 @app.post("/api/rss")
-async def post_rss(updated_rss_urls: list):
+async def post_rss(updated_rss_urls: list = Body(...)):
     global cached_rss
     with db_lock:
         cached_rss.clear()
@@ -810,6 +1063,18 @@ async def post_rss(updated_rss_urls: list):
             cached_rss.append(
                 {"name": item.get("name", "수집 채널"), "url": item.get("url", ""), "enabled": item.get("enabled", True)})
         save_rss(cached_rss)
+    return {"status": "success"}
+
+
+@app.post("/api/global-rss")
+async def post_global_rss(updated_rss_urls: list = Body(...)):
+    global cached_global_rss
+    with db_lock:
+        cached_global_rss.clear()
+        for item in updated_rss_urls:
+            cached_global_rss.append(
+                {"name": item.get("name", "수집 채널"), "url": item.get("url", ""), "enabled": item.get("enabled", True)})
+        save_rss(cached_global_rss, GLOBAL_RSS_DB_FILE)
     return {"status": "success"}
 
 
@@ -845,9 +1110,49 @@ if __name__ == "__main__":
         print(f"메모리 변수 : blacklisted_news   <- {BLACKLISTED_NEWS_FILE:<30} ({len(cached_blacklisted):,d}건)")
         print("--------------------------------------------------------------------------------\n")
 
-    # 📡 1. RSS 일반 스레드 구동
-    monitor = threading.Thread(target=rss_monitor_thread, daemon=True)
+        # 🌐 [해외 뉴스] 별도 디스크 파일에서 해외 캐시를 초기 적재
+        initial_global_stream = load_file_entire_content(GLOBAL_STREAM_NEWS_FILE)
+        initial_global_filtered = load_file_entire_content(GLOBAL_FILTERED_NEWS_FILE)
+        initial_global_blacklisted = load_file_entire_content(GLOBAL_BLACKLISTED_NEWS_FILE)
+
+        for s_item in initial_global_stream:
+            if "time" in s_item and "time_kst" not in s_item: s_item["time_kst"] = s_item["time"]
+        for f_item in initial_global_filtered:
+            if "time" in f_item and "time_kst" not in f_item: f_item["time_kst"] = f_item["time"]
+        for b_item in initial_global_blacklisted:
+            if "time" in b_item and "time_kst" not in b_item: b_item["time_kst"] = b_item["time"]
+
+        initial_global_stream.sort(key=lambda x: x["timestamp"], reverse=True)
+        initial_global_filtered.sort(key=lambda x: x["timestamp"], reverse=True)
+        initial_global_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
+
+        cached_global_stream.extend(initial_global_stream)
+        cached_global_filtered.extend(initial_global_filtered)
+        cached_global_blacklisted.extend(initial_global_blacklisted)
+
+        print("--------------------------------------------------------------------------------")
+        print(f"메모리 변수 : global_stream_news        <- {GLOBAL_STREAM_NEWS_FILE:<30} ({len(cached_global_stream):,d}건)")
+        print(f"메모리 변수 : global_filtered_news      <- {GLOBAL_FILTERED_NEWS_FILE:<30} ({len(cached_global_filtered):,d}건)")
+        print(f"메모리 변수 : global_blacklisted_news   <- {GLOBAL_BLACKLISTED_NEWS_FILE:<30} ({len(cached_global_blacklisted):,d}건)")
+        print("--------------------------------------------------------------------------------\n")
+
+    # 📡 1. RSS 일반 스레드 구동 (국내 + 해외 각자 독립 스레드)
+    monitor = threading.Thread(
+        target=rss_monitor_thread,
+        args=(cached_rss, cached_keywords, cached_blacklist, cached_stream, cached_filtered, cached_blacklisted,
+              rss_response_status, STREAM_NEWS_FILE, FILTERED_NEWS_FILE, BLACKLISTED_NEWS_FILE, ""),
+        daemon=True,
+    )
     monitor.start()
+
+    global_monitor = threading.Thread(
+        target=rss_monitor_thread,
+        args=(cached_global_rss, cached_global_keywords, cached_global_blacklist, cached_global_stream,
+              cached_global_filtered, cached_global_blacklisted, global_rss_response_status,
+              GLOBAL_STREAM_NEWS_FILE, GLOBAL_FILTERED_NEWS_FILE, GLOBAL_BLACKLISTED_NEWS_FILE, "[해외] "),
+        daemon=True,
+    )
+    global_monitor.start()
 
     # ⚡ 2. Uvicorn 구동 옵션 및 비동기 루프 제어
     config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
@@ -872,6 +1177,18 @@ if __name__ == "__main__":
             )
         )
         logger.info("⚡ [엔진 직결] Uvicorn 루프에 백업 스케줄러 비동기 태스크 등록을 완료했습니다.")
+
+        # 🌐 [해외 뉴스] 국내 백업 스케줄러와 완전히 분리된 global_back_up_scheduler 모듈로 별도 등록
+        asyncio.create_task(
+            global_back_up_scheduler.daily_backup_and_cleanup_scheduler(
+                db_lock=db_lock,
+                file_paths=FILE_PATHS_CONFIG_GLOBAL,
+                memory_caches=MEMORY_CACHES_CONFIG_GLOBAL,
+                load_content_func=load_file_entire_content,
+                print_status_func=print_global_resource_status
+            )
+        )
+        logger.info("⚡ [엔진 직결] Uvicorn 루프에 해외 뉴스 백업 스케줄러(global_back_up_scheduler) 비동기 태스크 등록을 완료했습니다.")
 
         # 일정 추출 파이프라인 스케줄러 등록 (백업 스케줄러와 실행 시각 안 겹치게 00:15 KST)
         asyncio.create_task(schedule_extraction_scheduler.daily_schedule_extraction_scheduler())
