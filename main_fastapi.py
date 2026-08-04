@@ -68,6 +68,13 @@ PORT = 8080
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+SENTIMENT_EMOJI = {
+    "positive": "🟢",
+    "negative": "🔴",
+    "mixed": "🟡",
+    "neutral": "🔵",
+}
+
 
 def send_telegram_notification(items):
     """키워드 포착된 신규 기사를 텔레그램으로 실시간 전송. 설정 없으면 조용히 스킵."""
@@ -83,9 +90,10 @@ def send_telegram_notification(items):
         raw_title = html.unescape(item.get("title", ""))
         title = html.escape(raw_title)
         link = html.escape(item.get("link", ""))
+        emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
-        text = f'{title}\n\n{link}\n​'
+        text = f'{emoji} {title}\n\n{link}\n​'
 
         try:
             resp = requests.post(
@@ -120,7 +128,9 @@ DEFAULT_CATEGORIZED_KEYWORDS = {
     "company_kr": ["삼성전자", "SK하이닉스", "현대차"],
     "global_company": ["엔비디아", "애플", "테슬라", "도요타", "소니", "보스턴다이나믹스"],
     "brokerage": ["골드만삭스", "JP모건", "모건스탠리"],
-    "performance": ["실적", "영업이익", "어닝서프라이즈", "흑자전환", "매출액", "영업익", "적자전환"]
+    "performance": ["실적", "영업이익", "어닝서프라이즈", "흑자전환", "매출액", "영업익", "적자전환"],
+    "positive": [],
+    "negative": []
 }
 DEFAULT_BLACKLIST = ["스팸", "찌라시"]
 DEFAULT_RSS_CHANNELS = [
@@ -190,7 +200,7 @@ def load_keywords():
             with open(KEYWORD_DB_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 migrated = {"etc": [], "sector": [], "company_kr": [], "global_company": [], "brokerage": [],
-                            "performance": []}
+                            "performance": [], "positive": [], "negative": []}
                 if isinstance(data, list):
                     for kw in data:
                         if kw in ["반도체", "조선"]:
@@ -204,7 +214,7 @@ def load_keywords():
                     return migrated
                 if "company_us" in data and ("global_company" not in data or not data["global_company"]):
                     data["global_company"] = data["company_us"]
-                for key in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance"]:
+                for key in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"]:
                     if key not in data: data[key] = []
                 if "company_us" in data: del data["company_us"]
                 if "company" in data: del data["company"]
@@ -362,8 +372,11 @@ def rss_monitor_thread():
                 current_blacklist = list(cached_blacklist)
 
             flat_keywords = set()
-            for key in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance"]:
+            for key in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"]:
                 flat_keywords.update(categorized_kw.get(key, []))
+
+            positive_set = set(categorized_kw.get("positive", []))
+            negative_set = set(categorized_kw.get("negative", []))
 
             new_stream_items = []
             new_filtered_items = []
@@ -512,8 +525,19 @@ def rss_monitor_thread():
                             matched_kws = [kw for kw in flat_keywords if kw.strip() and kw in title]
 
                             if matched_kws:
+                                has_positive = any(kw in positive_set for kw in matched_kws)
+                                has_negative = any(kw in negative_set for kw in matched_kws)
+                                if has_positive and has_negative:
+                                    item["sentiment"] = "mixed"
+                                elif has_positive:
+                                    item["sentiment"] = "positive"
+                                elif has_negative:
+                                    item["sentiment"] = "negative"
+                                else:
+                                    item["sentiment"] = "neutral"
+
                                 new_filtered_items.append(item)
-                                print(f"    ⭐ [키워드포착] {item['source']} ➔ 키워드: {matched_kws} | 제목: {title}")
+                                print(f"    ⭐ [키워드포착] {item['source']} ➔ 키워드: {matched_kws} | 감성: {item['sentiment']} | 제목: {title}")
                             else:
                                 print(f"    🆕 [실시간유입] {item['source']} ➔ 제목: {title}")
 

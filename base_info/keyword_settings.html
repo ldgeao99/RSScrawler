@@ -148,6 +148,44 @@
             <div id="tags-performance" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
         </div>
 
+        <!-- 🟢 호재 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-green-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🟢</span> 호재 키워드 <span class="text-[10px] text-slate-500 font-normal">(서프라이즈, 사상 최대 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-positive" placeholder="호재 키워드 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-green-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('positive')">
+                    <button onclick="addCategorized('positive')"
+                            class="bg-green-600 hover:bg-green-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-positive" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- 🔴 악재 키워드 -->
+        <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
+            <div>
+                <h3 class="text-xs font-black text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <span>🔴</span> 악재 키워드 <span class="text-[10px] text-slate-500 font-normal">(적자전환, 리콜 등)</span>
+                </h3>
+                <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                    <input type="text" id="input-negative" placeholder="악재 키워드 입력..."
+                           class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-red-500"
+                           onkeypress="if(event.key === 'Enter') addCategorized('negative')">
+                    <button onclick="addCategorized('negative')"
+                            class="bg-red-600 hover:bg-red-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-all shrink-0">
+                        추가
+                    </button>
+                </div>
+            </div>
+            <div id="tags-negative" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
+        </div>
+
     </div>
 
     <!-- 제외 키워드 설정 박스 -->
@@ -180,7 +218,7 @@
 </footer>
 
 <script>
-        let categorizedKeywords = { etc: [], sector: [], company_kr: [], global_company: [], brokerage: [], performance: [] };
+        let categorizedKeywords = { etc: [], sector: [], company_kr: [], global_company: [], brokerage: [], performance: [], positive: [], negative: [] };
         let blacklist = [];
 
         // 카테고리별 한글 명칭 매핑 오프젝트
@@ -190,7 +228,9 @@
             company_kr: "국내 기업명",
             global_company: "해외 기업명",
             brokerage: "해외 증권사",
-            performance: "실적 키워드"
+            performance: "실적 키워드",
+            positive: "호재 키워드",
+            negative: "악재 키워드"
         };
 
         async function loadKeywords() {
@@ -204,14 +244,16 @@
         }
 
         function renderCategoryTags() {
-            const categories = ["etc", "sector", "company_kr", "global_company", "brokerage", "performance"];
+            const categories = ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"];
             const styles = {
                 etc: "bg-blue-950/40 text-blue-300 border-blue-900/60",
                 sector: "bg-emerald-950/40 text-emerald-300 border-emerald-900/60",
                 company_kr: "bg-purple-950/40 text-purple-300 border-purple-900/60",
                 global_company: "bg-indigo-950/40 text-indigo-300 border-indigo-900/60",
                 brokerage: "bg-amber-950/40 text-amber-300 border-amber-900/60",
-                performance: "bg-cyan-950/40 text-cyan-300 border-cyan-900/60"
+                performance: "bg-cyan-950/40 text-cyan-300 border-cyan-900/60",
+                positive: "bg-green-950/40 text-green-300 border-green-900/60",
+                negative: "bg-red-950/40 text-red-300 border-red-900/60"
             };
 
             categories.forEach(cat => {
