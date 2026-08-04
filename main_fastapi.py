@@ -455,6 +455,13 @@ def rss_monitor_thread(
     session = requests.Session()
     is_first_scan = True  # 서버 재시작 직후 첫 스캔은 다운타임 동안 밀린 기사가 한꺼번에 잡히므로 텔레그램 알림만 건너뜀
 
+    # 🐢 [429 백오프] 채널(url)별 연속 429 횟수와 "이 시각까지는 재시도하지 않음" 시각을 기억한다.
+    # 스레드 지역 변수라 국내/해외 파이프라인이 서로 독립적으로 관리된다.
+    channel_fail_streak = {}
+    channel_backoff_until = {}
+    BACKOFF_STEP_SECONDS = 60      # 1회차 60초, 2회차 120초, 3회차 180초 ... 선형 증가
+    BACKOFF_CAP_SECONDS = 1800     # 최대 30분
+
     while True:
         try:
             # ⏰ KST 기준 정확한 '오늘'과 '어제'의 달력상 날짜(Date) 정의
@@ -501,6 +508,12 @@ def rss_monitor_thread(
                     with db_lock: response_status_ref[url] = "OFF"
                     continue
 
+                backoff_until = channel_backoff_until.get(url, 0)
+                if time.time() < backoff_until:
+                    remaining = int(backoff_until - time.time())
+                    print(f" ⏭️ [{name}] 429 백오프 중이라 스킵 (연속 {channel_fail_streak.get(url, 0)}회 실패, {remaining}초 후 재시도)")
+                    continue
+
                 print(f" 🔍 [{name}] 피드 연결 중...", end="", flush=True)
 
                 try:
@@ -525,8 +538,21 @@ def rss_monitor_thread(
                     response = session.get(request_url, headers=headers, impersonate="chrome", timeout=10)
                     with db_lock:
                         response_status_ref[url] = response.status_code
+
+                    if response.status_code == 429:
+                        channel_fail_streak[url] = channel_fail_streak.get(url, 0) + 1
+                        backoff_seconds = min(BACKOFF_STEP_SECONDS * channel_fail_streak[url], BACKOFF_CAP_SECONDS)
+                        channel_backoff_until[url] = time.time() + backoff_seconds
+                        print(f" ➔ 🟡 429 Rate Limited - {channel_fail_streak[url]}회 연속 실패라 앞으로 {backoff_seconds}초간 이 채널을 스킵합니다")
+                        time.sleep(0.3)
+                        continue
+
                     response.raise_for_status()
                     print(f" ➔ 🟢 {response.status_code} OK")
+
+                    # 정상 응답을 받았으니 이 채널의 429 백오프 상태를 초기화한다.
+                    channel_fail_streak.pop(url, None)
+                    channel_backoff_until.pop(url, None)
 
                     feed = feedparser.parse(response.text)
                     source_name = name if name and name not in ["기존 채널", "수집 채널"] else feed.feed.get("title", "알 수 없음")
