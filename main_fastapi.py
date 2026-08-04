@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 # 🚀 분리한 백업/일정추출 스케줄러 모듈 임포트
 import back_up_scheduler
 import schedule_extraction_scheduler
+import company_list_sync_scheduler
 
 from fastapi import Depends, FastAPI, Body, HTTPException, status
 from fastapi.responses import FileResponse
@@ -752,6 +753,16 @@ if __name__ == "__main__":
         # 일정 추출 파이프라인 스케줄러 등록 (백업 스케줄러와 실행 시각 안 겹치게 00:15 KST)
         asyncio.create_task(schedule_extraction_scheduler.daily_schedule_extraction_scheduler())
         logger.info("⚡ [엔진 직결] Uvicorn 루프에 일정 추출 스케줄러 비동기 태스크 등록을 완료했습니다.")
+
+        # 상장사 기업명 동기화 스케줄러 등록 (앞의 둘과 안 겹치게 01:00 KST)
+        asyncio.create_task(
+            company_list_sync_scheduler.daily_company_sync_scheduler(
+                cached_keywords=cached_keywords,
+                db_lock=db_lock,
+                save_keywords_func=save_keywords
+            )
+        )
+        logger.info("⚡ [엔진 직결] Uvicorn 루프에 기업명 동기화 스케줄러 비동기 태스크 등록을 완료했습니다.")
 
     server.startup = custom_startup
 
