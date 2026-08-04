@@ -392,9 +392,9 @@ def rss_monitor_thread():
             positive_set = set(categorized_kw.get("positive", []))
             negative_set = set(categorized_kw.get("negative", []))
 
-            new_stream_items = []
-            new_filtered_items = []
-            new_blacklisted_items = []
+            total_new_stream = 0
+            total_new_filtered = 0
+            total_new_blacklisted = 0
 
             for ch in target_channels:
                 name = ch.get("name", "").strip()
@@ -435,6 +435,10 @@ def rss_monitor_thread():
 
                     feed = feedparser.parse(response.text)
                     source_name = name if name and name not in ["기존 채널", "수집 채널"] else feed.feed.get("title", "알 수 없음")
+
+                    new_stream_items = []
+                    new_filtered_items = []
+                    new_blacklisted_items = []
 
                     ch_entries = []
                     for entry in feed.entries:
@@ -557,6 +561,37 @@ def rss_monitor_thread():
 
                     if channel_new_count > 0:
                         print(f"    └ 🏁 [{name}] 피드 탐색 완료 (신규 유입 기사: {channel_new_count}건)")
+
+                    # 📡 [채널 단위 즉시 반영] 전체 채널을 다 돌 때까지 기다리지 않고,
+                    # 이 채널의 신규 기사가 생기는 즉시 캐시/파일에 반영해 브라우저가 바로 받아갈 수 있게 한다.
+                    if new_stream_items or new_filtered_items or new_blacklisted_items:
+                        _safe_atomic_append_write(STREAM_NEWS_FILE, new_stream_items)
+                        _safe_atomic_append_write(FILTERED_NEWS_FILE, new_filtered_items)
+                        _safe_atomic_append_write(BLACKLISTED_NEWS_FILE, new_blacklisted_items)
+
+                        with db_lock:
+                            if new_stream_items:
+                                for idx, item in enumerate(new_stream_items): cached_stream.insert(idx, item)
+                            if new_filtered_items:
+                                for idx, item in enumerate(new_filtered_items): cached_filtered.insert(idx, item)
+                            if new_blacklisted_items:
+                                for idx, item in enumerate(new_blacklisted_items): cached_blacklisted.insert(idx, item)
+
+                            cached_stream.sort(key=lambda x: x["timestamp"], reverse=True)
+                            cached_filtered.sort(key=lambda x: x["timestamp"], reverse=True)
+                            cached_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
+
+                        print(f"    └ 📡 [{name}] 신규 기사 즉시 반영 ➔ 실시간: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
+
+                        if new_filtered_items and not is_first_scan:
+                            send_telegram_notification(new_filtered_items)
+                        elif new_filtered_items and is_first_scan:
+                            print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
+
+                        total_new_stream += len(new_stream_items)
+                        total_new_filtered += len(new_filtered_items)
+                        total_new_blacklisted += len(new_blacklisted_items)
+
                     time.sleep(0.3)
 
                 except Exception as feed_err:
@@ -564,29 +599,8 @@ def rss_monitor_thread():
                     time.sleep(0.3)
                     continue
 
-            if new_stream_items or new_filtered_items or new_blacklisted_items:
-                _safe_atomic_append_write(STREAM_NEWS_FILE, new_stream_items)
-                _safe_atomic_append_write(FILTERED_NEWS_FILE, new_filtered_items)
-                _safe_atomic_append_write(BLACKLISTED_NEWS_FILE, new_blacklisted_items)
-
-                with db_lock:
-                    if new_stream_items:
-                        for idx, item in enumerate(new_stream_items): cached_stream.insert(idx, item)
-                    if new_filtered_items:
-                        for idx, item in enumerate(new_filtered_items): cached_filtered.insert(idx, item)
-                    if new_blacklisted_items:
-                        for idx, item in enumerate(new_blacklisted_items): cached_blacklisted.insert(idx, item)
-
-                    cached_stream.sort(key=lambda x: x["timestamp"], reverse=True)
-                    cached_filtered.sort(key=lambda x: x["timestamp"], reverse=True)
-                    cached_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
-
-                print(f"🏁 [결과 요약] 탐색 완료 ➔ 실시간 유입: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
-
-                if new_filtered_items and not is_first_scan:
-                    send_telegram_notification(new_filtered_items)
-                elif new_filtered_items and is_first_scan:
-                    print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
+            if total_new_stream or total_new_filtered or total_new_blacklisted:
+                print(f"🏁 [결과 요약] 탐색 완료 ➔ 실시간 유입: +{total_new_stream}건 | 키워드 포착: +{total_new_filtered}건")
             else:
                 print(f"🏁 [결과 요약] 탐색 완료 ➔ 변동 없음")
 
