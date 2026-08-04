@@ -91,16 +91,16 @@
         </section>
 
         <section class="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-xl overflow-hidden">
-            <div class="flex justify-between items-center mb-6 pb-2 border-b border-slate-800">
-                <div class="flex items-center gap-2">
+            <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-2 md:gap-0 mb-6 pb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2 flex-wrap">
                     <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider">구독 중인 채널 전체 목록</h2>
-                    <span id="rss-count" class="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-extrabold">0</span>
+                    <span id="rss-count" class="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-extrabold shrink-0">0</span>
                 </div>
                 <p class="text-[11px] text-slate-500">💡 최근 응답코드를 보고 403(차단) 등이 지속되는 채널은 잠시 활성화를 끄는 것을 권장합니다.</p>
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs border-collapse">
+                <table class="w-full min-w-[960px] text-left text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-slate-800 text-slate-400 text-[11px] uppercase tracking-wider">
                             <th class="py-3 px-4 text-center font-bold" style="width: 130px;">수집 활성화</th>
