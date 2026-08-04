@@ -69,3 +69,14 @@ async def daily_company_sync_scheduler(cached_keywords: dict, db_lock, save_keyw
         except Exception as e:
             logger.error(f"❌ [기업명 동기화 스케줄러 에러] 정기 실행 중 치명적 오류 발생: {e}")
             await asyncio.sleep(10)  # 루프 파괴 방지용 유예 코드
+
+
+# 수동 재실행/백필용: python3 company_list_sync_scheduler.py
+# (반드시 main_fastapi.py가 있는 프로젝트 루트에서 실행해야 함)
+if __name__ == "__main__":
+    import main_fastapi as mf
+
+    before = len(mf.cached_keywords.get("company_kr", []))
+    added = sync_company_kr_keywords(mf.cached_keywords, mf.db_lock, mf.save_keywords)
+    after = len(mf.cached_keywords.get("company_kr", []))
+    print(f"before: {before}, added: {added}, after: {after}")
