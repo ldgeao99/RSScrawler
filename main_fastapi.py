@@ -487,11 +487,21 @@ def rss_monitor_thread(
             print(f"==================================================")
 
             # 🛠️ [무결성 보정] 매 스캔 턴마다 동적으로 풀 구성
+            # 💡 [중복 방지] link만으로는 부족한 경우가 있다 (예: FinancialJuice가 같은 기사를
+            # 서로 다른 링크로 두 번 발행). 그래서 (매체, 제목)도 함께 추적해 같은 제목이 또
+            # 들어오면 링크가 달라도 중복으로 간주하고 걸러낸다.
             seen_links = set()
+            seen_titles = set()
             with db_lock:
-                for item in cached_stream_ref: seen_links.add(item["link"])
-                for item in cached_filtered_ref: seen_links.add(item["link"])
-                for item in cached_blacklisted_ref: seen_links.add(item["link"])
+                for item in cached_stream_ref:
+                    seen_links.add(item["link"])
+                    seen_titles.add((item.get("source", ""), item.get("title", "")))
+                for item in cached_filtered_ref:
+                    seen_links.add(item["link"])
+                    seen_titles.add((item.get("source", ""), item.get("title", "")))
+                for item in cached_blacklisted_ref:
+                    seen_links.add(item["link"])
+                    seen_titles.add((item.get("source", ""), item.get("title", "")))
 
                 target_channels = [dict(ch) for ch in cached_rss_ref]
                 categorized_kw = dict(cached_keywords_ref)
@@ -566,6 +576,7 @@ def rss_monitor_thread(
 
                     feed = feedparser.parse(response.text)
                     source_name = name if name and name not in ["기존 채널", "수집 채널"] else feed.feed.get("title", "알 수 없음")
+                    resolved_source_name = source_name if "한국경제" in source_name or "hankyung.com" not in url else f"한국경제({name})"
 
                     new_stream_items = []
                     new_filtered_items = []
@@ -660,6 +671,13 @@ def rss_monitor_thread(
                             if title != original_title:
                                 print(f"    🌐 [제목 번역] '{original_title[:30]}...' → '{title[:30]}...'")
 
+                        # 🔁 [중복 스킵] 같은 매체에서 동일 제목 기사가 다른 링크로 재발행된 경우 걸러낸다.
+                        title_key = (resolved_source_name, title)
+                        if title_key in seen_titles:
+                            print(f"    🔁 [중복 스킵] {resolved_source_name} ➔ 동일 제목 기사 중복 감지: {title[:30]}...")
+                            continue
+                        seen_titles.add(title_key)
+
                         # 🟢 유효 일자(오늘/어제) 내의 기사만 통과되어 출력 및 수집 진행
                         print(f" 🔍 [날짜 변환 모니터링]")
                         print(f"    ├ 매체명: {source_name}")
@@ -671,7 +689,7 @@ def rss_monitor_thread(
                         item = {
                             "title": title,
                             "link": link,
-                            "source": source_name if "한국경제" in source_name or "hankyung.com" not in url else f"한국경제({name})",
+                            "source": resolved_source_name,
                             "time_kst": news_time_str,
                             "timestamp": news_timestamp,
                             "date_error": date_error_flag
