@@ -66,7 +66,6 @@ PORT = 8080
 # ====================================================
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-TELEGRAM_MAX_MESSAGE_LEN = 3500  # 텔레그램 4096자 제한 대비 여유
 
 
 def send_telegram_notification(items):
@@ -74,35 +73,25 @@ def send_telegram_notification(items):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not items:
         return
 
-    lines = []
+    # 💡 여러 건을 한 메시지에 묶으면 모바일 푸시 미리보기엔 첫 건만 보여서, 건마다 별도 메시지로 보낸다.
+    # 💡 텔레그램은 순수 공백/개행만 있는 꼬리를 렌더링 시 잘라내므로, 마지막 줄에 보이지 않는 문자
+    # (zero-width space)를 넣어 다음 메시지와의 간격을 실제로 남긴다.
     for item in items:
         # RSS 피드에서 이미 &quot; 같은 HTML 엔티티가 한 번 덜 풀린 채로 들어오는 경우가 있어
         # 먼저 unescape로 실제 문자(")로 되돌린 뒤, 텔레그램 HTML 파싱용으로 다시 escape한다.
         raw_title = html.unescape(item.get("title", ""))
         title = html.escape(raw_title)
-        link = item.get("link", "")
-        lines.append(f'⭐ <a href="{link}">{title}</a>')
+        link = html.escape(item.get("link", ""))
+        # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
+        # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
+        text = f'{title}\n\n{link}\n​'
 
-    # 메시지 길이 제한에 맞춰 청크 분할
-    # 💡 모바일 푸시 알림 미리보기는 메시지 맨 앞부분만 보여주므로,
-    # 헤더 문구 없이 뉴스 제목이 바로 첫 줄에 오도록 한다.
-    chunks = []
-    current = ""
-    for line in lines:
-        if len(current) + len(line) + 2 > TELEGRAM_MAX_MESSAGE_LEN:
-            chunks.append(current)
-            current = ""
-        current += line + "\n\n"
-    if current.strip():
-        chunks.append(current)
-
-    for chunk in chunks:
         try:
             resp = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={
                     "chat_id": TELEGRAM_CHAT_ID,
-                    "text": chunk,
+                    "text": text,
                     "parse_mode": "HTML",
                     "disable_web_page_preview": True,
                 },
@@ -112,6 +101,8 @@ def send_telegram_notification(items):
                 logger.warning(f"⚠️ 텔레그램 전송 실패 ({resp.status_code}): {resp.text[:200]}")
         except Exception as e:
             logger.warning(f"⚠️ 텔레그램 전송 에러: {e}")
+
+        time.sleep(0.3)  # 텔레그램 플러드 제한 방지용 짧은 간격
 
 # ====================================================
 
