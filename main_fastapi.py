@@ -540,6 +540,7 @@ def rss_monitor_thread(
                         link = entry.get("link", "")
                         if link in seen_links: continue
                         title = re.sub(r'\s+-\s+한국경제$', '', entry.get("title", ""))
+                        title = re.sub(r'^\s*FinancialJuice\s*:\s*', '', title, flags=re.IGNORECASE)
                         ch_entries.append((title, link, entry))
 
                     channel_new_count = 0
