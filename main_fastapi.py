@@ -694,16 +694,28 @@ async def get_blacklist():
 
 @app.get("/api/rss")
 async def get_rss_channels():
-    import datetime as dt
-    today_start = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
+    # ⏰ 서버의 시스템 타임존(UTC 등)이 아닌 KST 기준으로 '오늘'의 시작 시각을 계산한다.
+    # (item.timestamp는 항상 KST 기준으로 계산되어 저장되므로 경계도 KST로 맞춰야 정확히 일치한다)
+    kst_tz = timezone(timedelta(hours=9))
+    now_kst = datetime.now(kst_tz)
+    today_start = datetime.combine(now_kst.date(), datetime.min.time(), tzinfo=kst_tz).timestamp()
+
     with db_lock:
         response_channels = []
         for ch in cached_rss:
             ch_url = ch.get("url", "")
             ch_name = ch.get("name", "수집 채널")
             ch_status = rss_response_status.get(ch_url, "-")
-            today_count = sum(1 for item in cached_stream if
-                              item.get("source") == ch_name and item.get("timestamp", 0) >= today_start)
+
+            # 🗂️ 실시간/필터링/격리 세 캐시를 모두 훑되(격리 뉴스는 실시간 캐시에 안 남으므로 별도 합산 필요),
+            # 필터링 뉴스는 실시간 캐시의 부분집합이라 링크 기준으로 중복 제거해 정확히 센다.
+            today_links = set()
+            for source_list in (cached_stream, cached_filtered, cached_blacklisted):
+                for item in source_list:
+                    if item.get("source") == ch_name and item.get("timestamp", 0) >= today_start:
+                        today_links.add(item.get("link"))
+            today_count = len(today_links)
+
             response_channels.append(
                 {"name": ch_name, "url": ch_url, "enabled": ch.get("enabled", True), "today_count": today_count,
                  "status_code": ch_status})
