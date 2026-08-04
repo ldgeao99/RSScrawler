@@ -115,6 +115,40 @@ def send_telegram_notification(items):
         time.sleep(0.3)  # 텔레그램 플러드 제한 방지용 짧은 간격
 
 # ====================================================
+# 🌐 [해외] 영문 피드(FinancialJuice 등) 제목 한글 번역
+# 비용 발생을 피하기 위해 유료 LLM API 대신, 구글 번역의 비공식 무료 웹 엔드포인트를 사용한다.
+# (translate.googleapis.com의 /translate_a/single - 키 발급/과금 없이 누구나 호출 가능하지만
+#  비공식이라 언젠가 막히거나 바뀔 수 있음. 실패 시 원문 제목을 그대로 반환하도록 방어한다.)
+# ====================================================
+# 도메인에 이 문자열이 포함되면 제목을 한글로 번역한다. 영문 전용 해외 피드가 늘어나면 여기에 추가.
+ENGLISH_TITLE_TRANSLATE_DOMAINS = ["financialjuice.com"]
+
+
+def translate_title_to_korean(title: str) -> str:
+    """영문 뉴스 제목을 한국어로 번역한다. 실패 시 원문 제목을 그대로 반환한다."""
+    if not title.strip():
+        return title
+
+    try:
+        response = requests.get(
+            "https://translate.googleapis.com/translate_a/single",
+            params={"client": "gtx", "sl": "en", "tl": "ko", "dt": "t", "q": title},
+            timeout=8,
+        )
+        response.raise_for_status()
+        data = response.json()
+        translated = "".join(segment[0] for segment in data[0] if segment and segment[0])
+        translated = translated.strip()
+        return translated if translated else title
+    except Exception as e:
+        logger.warning(f"⚠️ [제목 번역 실패] '{title[:40]}...' 번역 중 오류: {e}")
+        return title
+
+
+def should_translate_title(url: str) -> bool:
+    return any(domain in url for domain in ENGLISH_TITLE_TRANSLATE_DOMAINS)
+
+# ====================================================
 
 RSS_DB_FILE = "base_info/rss_list.json"
 KEYWORD_DB_FILE = "base_info/keyword_list_include.json"
@@ -580,6 +614,14 @@ def rss_monitor_thread(
                         if news_date_obj not in [today_date, yesterday_date]:
                             # 무의미하게 터미널을 채우던 대량의 print 코드를 제거하여 자원을 아낍니다.
                             continue
+
+                        # 🌐 [해외] 영문 전용 피드(FinancialJuice 등)는 제목을 한글로 번역한 뒤
+                        # 이후 블랙리스트/키워드 매칭도 번역된 한글 제목 기준으로 수행되게 한다.
+                        if should_translate_title(url):
+                            original_title = title
+                            title = translate_title_to_korean(title)
+                            if title != original_title:
+                                print(f"    🌐 [제목 번역] '{original_title[:30]}...' → '{title[:30]}...'")
 
                         # 🟢 유효 일자(오늘/어제) 내의 기사만 통과되어 출력 및 수집 진행
                         print(f" 🔍 [날짜 변환 모니터링]")
