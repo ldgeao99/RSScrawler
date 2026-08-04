@@ -60,6 +60,9 @@
         </div>
         <!-- 🟢 다른 설정 창들과 완벽하게 규격을 맞춘 창 닫기 버튼 레이아웃 -->
         <div class="flex items-center gap-3 shrink-0">
+            <span id="today-total-count" class="text-[10px] lg:text-xs bg-amber-500/10 text-amber-400 px-2.5 lg:px-3 py-1.5 lg:py-2 rounded-lg border border-amber-500/20 font-extrabold whitespace-nowrap shrink-0">
+                📊 오늘 총 수집량 0건
+            </span>
             <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
                 🚪 창 닫기
             </button>
@@ -164,6 +167,10 @@
         function renderTable() {
             const tbody = document.getElementById('rssTableBody');
             document.getElementById('rss-count').textContent = rssList.length;
+
+            const todayTotal = rssList.reduce((sum, ch) => sum + (ch.today_count || 0), 0);
+            document.getElementById('today-total-count').textContent = `📊 오늘 총 수집량 ${todayTotal}건`;
+
             tbody.innerHTML = '';
 
             if (rssList.length === 0) {
