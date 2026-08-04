@@ -152,14 +152,14 @@
             <div id="tags-performance" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
         </div>
 
-        <!-- 🟢 호재 키워드 -->
+        <!-- 🟢 텔레그램 호재 키워드 -->
         <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
             <div>
                 <h3 class="text-xs font-black text-green-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <span>🟢</span> 호재 키워드 <span class="text-[10px] text-slate-500 font-normal">(서프라이즈, 사상 최대 등)</span>
+                    <span>🟢</span> 텔레그램 호재 키워드 <span class="text-[10px] text-slate-500 font-normal">(서프라이즈, 사상 최대 등)</span>
                 </h3>
                 <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
-                    <input type="text" id="input-positive" placeholder="호재 키워드 입력..."
+                    <input type="text" id="input-positive" placeholder="텔레그램 호재 키워드 입력..."
                            class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-green-500"
                            onkeypress="if(event.key === 'Enter') addCategorized('positive')">
                     <button onclick="addCategorized('positive')"
@@ -171,14 +171,14 @@
             <div id="tags-positive" class="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto pr-1"></div>
         </div>
 
-        <!-- 🔴 악재 키워드 -->
+        <!-- 🔴 텔레그램 악재 키워드 -->
         <div class="bg-slate-900 border border-slate-800/80 p-5 rounded-2xl flex flex-col gap-4 shadow-xl">
             <div>
                 <h3 class="text-xs font-black text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <span>🔴</span> 악재 키워드 <span class="text-[10px] text-slate-500 font-normal">(적자전환, 리콜 등)</span>
+                    <span>🔴</span> 텔레그램 악재 키워드 <span class="text-[10px] text-slate-500 font-normal">(적자전환, 리콜 등)</span>
                 </h3>
                 <div class="flex gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
-                    <input type="text" id="input-negative" placeholder="악재 키워드 입력..."
+                    <input type="text" id="input-negative" placeholder="텔레그램 악재 키워드 입력..."
                            class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-red-500"
                            onkeypress="if(event.key === 'Enter') addCategorized('negative')">
                     <button onclick="addCategorized('negative')"
@@ -233,8 +233,8 @@
             global_company: "해외 기업명",
             brokerage: "해외 증권사",
             performance: "실적 키워드",
-            positive: "호재 키워드",
-            negative: "악재 키워드"
+            positive: "텔레그램 호재 키워드",
+            negative: "텔레그램 악재 키워드"
         };
 
         // '/패턴/'처럼 슬래시로 감싼 키워드는 정규식으로 취급되므로(백엔드 keyword_matches()와 동일 규칙),
