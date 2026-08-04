@@ -261,39 +261,79 @@
             }
         }
 
-        function renderCategoryTags() {
-            const categories = ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"];
-            const styles = {
-                etc: "bg-blue-950/40 text-blue-300 border-blue-900/60",
-                sector: "bg-emerald-950/40 text-emerald-300 border-emerald-900/60",
-                company_kr: "bg-purple-950/40 text-purple-300 border-purple-900/60",
-                global_company: "bg-indigo-950/40 text-indigo-300 border-indigo-900/60",
-                brokerage: "bg-amber-950/40 text-amber-300 border-amber-900/60",
-                performance: "bg-cyan-950/40 text-cyan-300 border-cyan-900/60",
-                positive: "bg-green-950/40 text-green-300 border-green-900/60",
-                negative: "bg-red-950/40 text-red-300 border-red-900/60"
-            };
+        // 💡 [성능] 카테고리 하나(국내 기업명 등)에 수천 개 태그가 있으면 전부 한 번에 DOM에
+        // 그려서 창 크기 조절 시 레이아웃 재계산이 버벅였음. 처음엔 일부만 그리고,
+        // 스크롤이 바닥에 닿을 때마다 다음 묶음을 추가로 그린다.
+        const CATEGORY_LIST = ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"];
+        const CATEGORY_STYLES = {
+            etc: "bg-blue-950/40 text-blue-300 border-blue-900/60",
+            sector: "bg-emerald-950/40 text-emerald-300 border-emerald-900/60",
+            company_kr: "bg-purple-950/40 text-purple-300 border-purple-900/60",
+            global_company: "bg-indigo-950/40 text-indigo-300 border-indigo-900/60",
+            brokerage: "bg-amber-950/40 text-amber-300 border-amber-900/60",
+            performance: "bg-cyan-950/40 text-cyan-300 border-cyan-900/60",
+            positive: "bg-green-950/40 text-green-300 border-green-900/60",
+            negative: "bg-red-950/40 text-red-300 border-red-900/60"
+        };
+        const RENDER_BATCH_SIZE = 50;
+        const renderedCounts = {}; // cat -> 지금까지 화면에 그려둔 개수
 
-            categories.forEach(cat => {
+        function renderCategoryTags() {
+            CATEGORY_LIST.forEach(cat => {
+                const list = categorizedKeywords[cat] || [];
+                renderedCounts[cat] = Math.min(RENDER_BATCH_SIZE, list.length);
+                renderCategoryBatch(cat);
+            });
+        }
+
+        function renderCategoryBatch(cat) {
+            const container = document.getElementById(`tags-${cat}`);
+            if (!container) return;
+
+            const list = categorizedKeywords[cat] || [];
+            container.innerHTML = '';
+
+            if (list.length === 0) {
+                container.innerHTML = '<span class="text-slate-600 text-[10px] py-1">등록 없음</span>';
+                return;
+            }
+
+            const count = renderedCounts[cat] || Math.min(RENDER_BATCH_SIZE, list.length);
+            for (let index = 0; index < count; index++) {
+                const kw = list[index];
+                const tag = document.createElement('span');
+                tag.className = `inline-flex items-center gap-1 bg-slate-950 text-[11px] px-2.5 py-1 rounded border font-semibold ${CATEGORY_STYLES[cat]}`;
+                tag.innerHTML = `
+                    <span>${kw}</span>
+                    <button onclick="deleteCategorized('${cat}', ${index})" class="text-red-400 hover:text-red-300 font-bold ml-1 text-xs">&times;</button>
+                `;
+                container.appendChild(tag);
+            }
+
+            if (count < list.length) {
+                const moreTag = document.createElement('span');
+                moreTag.className = 'text-slate-600 text-[10px] py-1 w-full text-center';
+                moreTag.textContent = `⏳ 스크롤하면 더 불러옵니다 (${count}/${list.length})`;
+                container.appendChild(moreTag);
+            }
+        }
+
+        function loadMoreCategoryTags(cat) {
+            const list = categorizedKeywords[cat] || [];
+            const current = renderedCounts[cat] || RENDER_BATCH_SIZE;
+            if (current >= list.length) return;
+            renderedCounts[cat] = Math.min(current + RENDER_BATCH_SIZE, list.length);
+            renderCategoryBatch(cat);
+        }
+
+        function setupCategoryInfiniteScroll() {
+            CATEGORY_LIST.forEach(cat => {
                 const container = document.getElementById(`tags-${cat}`);
                 if (!container) return;
-
-                container.innerHTML = '';
-                const list = categorizedKeywords[cat] || [];
-
-                if (list.length === 0) {
-                    container.innerHTML = '<span class="text-slate-600 text-[10px] py-1">등록 없음</span>';
-                    return;
-                }
-
-                list.forEach((kw, index) => {
-                    const tag = document.createElement('span');
-                    tag.className = `inline-flex items-center gap-1 bg-slate-950 text-[11px] px-2.5 py-1 rounded border font-semibold ${styles[cat]}`;
-                    tag.innerHTML = `
-                        <span>${kw}</span>
-                        <button onclick="deleteCategorized('${cat}', ${index})" class="text-red-400 hover:text-red-300 font-bold ml-1 text-xs">&times;</button>
-                    `;
-                    container.appendChild(tag);
+                container.addEventListener('scroll', () => {
+                    if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                        loadMoreCategoryTags(cat);
+                    }
                 });
             });
         }
@@ -318,15 +358,16 @@
                 return;
             }
 
-            // 임시 데이터 복사본 생성 후 백엔드 전송
+            // 임시 데이터 복사본 생성 후 백엔드 전송 (새 키워드는 맨 앞에 추가해서 바로 눈에 띄게)
             const tempKeywords = JSON.parse(JSON.stringify(categorizedKeywords));
-            tempKeywords[cat].push(kw);
+            tempKeywords[cat].unshift(kw);
 
             const isSuccess = await updateKeywordsBackend(tempKeywords);
             if (isSuccess) {
-                categorizedKeywords[cat].push(kw);
+                categorizedKeywords[cat].unshift(kw);
+                renderedCounts[cat] = Math.min((renderedCounts[cat] || RENDER_BATCH_SIZE) + 1, categorizedKeywords[cat].length);
                 input.value = '';
-                renderCategoryTags();
+                renderCategoryBatch(cat);
                 alert(`✨ [${categoryNames[cat]}] 에 '${kw}' 키워드가 추가되었습니다!`);
             }
         }
@@ -379,7 +420,14 @@
             }
         }
 
+        let renderedBlacklistCount = RENDER_BATCH_SIZE;
+
         function renderBlacklistTags() {
+            renderedBlacklistCount = Math.min(RENDER_BATCH_SIZE, blacklist.length);
+            renderBlacklistBatch();
+        }
+
+        function renderBlacklistBatch() {
             const container = document.getElementById('blacklist-tags');
             container.innerHTML = '';
 
@@ -388,7 +436,9 @@
                 return;
             }
 
-            blacklist.forEach((bl, index) => {
+            const count = renderedBlacklistCount || Math.min(RENDER_BATCH_SIZE, blacklist.length);
+            for (let index = 0; index < count; index++) {
+                const bl = blacklist[index];
                 const tag = document.createElement('span');
                 tag.className = "inline-flex items-center gap-1 bg-rose-950/30 text-rose-300 text-[11px] px-2.5 py-1 rounded border border-rose-900/50 font-semibold";
                 tag.innerHTML = `
@@ -396,6 +446,26 @@
                     <button onclick="deleteBlacklist(${index})" class="text-red-400 hover:text-red-300 font-bold ml-1 text-xs">&times;</button>
                 `;
                 container.appendChild(tag);
+            }
+
+            if (count < blacklist.length) {
+                const moreTag = document.createElement('span');
+                moreTag.className = 'text-slate-600 text-[10px] py-1 w-full text-center';
+                moreTag.textContent = `⏳ 스크롤하면 더 불러옵니다 (${count}/${blacklist.length})`;
+                container.appendChild(moreTag);
+            }
+        }
+
+        function setupBlacklistInfiniteScroll() {
+            const container = document.getElementById('blacklist-tags');
+            if (!container) return;
+            container.addEventListener('scroll', () => {
+                if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                    if (renderedBlacklistCount < blacklist.length) {
+                        renderedBlacklistCount = Math.min(renderedBlacklistCount + RENDER_BATCH_SIZE, blacklist.length);
+                        renderBlacklistBatch();
+                    }
+                }
             });
         }
 
@@ -415,13 +485,14 @@
                 return;
             }
 
-            const updatedList = [...blacklist, bl];
+            const updatedList = [bl, ...blacklist];
             const isSuccess = await updateBlacklistBackend(updatedList);
 
             if (isSuccess) {
-                blacklist.push(bl);
+                blacklist.unshift(bl);
+                renderedBlacklistCount = Math.min(renderedBlacklistCount + 1, blacklist.length);
                 input.value = '';
-                renderBlacklistTags();
+                renderBlacklistBatch();
                 alert("🎉 제외 단어가 성공적으로 등록되었습니다!");
             }
         }
@@ -466,6 +537,8 @@
         window.addEventListener('DOMContentLoaded', async () => {
             await loadKeywords();
             await loadBlacklist();
+            setupCategoryInfiniteScroll();
+            setupBlacklistInfiniteScroll();
         });
 </script>
 </body>
