@@ -153,14 +153,27 @@
         // 💡 [성능] 키워드마다 new RegExp()를 새로 만들어 카드 하나당 수천 번 치환하던 방식을
         // 전체 키워드를 하나의 alternation 정규식으로 합쳐 1회만 컴파일해 재사용하도록 변경.
         // 긴 키워드가 짧은 키워드에 부분적으로 가려지지 않도록 길이 내림차순으로 정렬한다.
+        // '/패턴/'처럼 슬래시로 감싼 키워드는 정규식 그대로, 나머지는 리터럴로 이스케이프한다
+        // (백엔드 keyword_matches()와 동일한 규칙).
         function buildCombinedKeywordRegex() {
-            const escaped = targetKeywords
+            const parts = targetKeywords
                 .map(kw => kw.trim())
                 .filter(kw => kw.length > 0)
                 .sort((a, b) => b.length - a.length)
-                .map(kw => kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+                .map(kw => {
+                    if (kw.length > 2 && kw.startsWith('/') && kw.endsWith('/')) {
+                        return kw.slice(1, -1);
+                    }
+                    return kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                });
 
-            combinedKeywordRegex = escaped.length > 0 ? new RegExp(`(${escaped.join('|')})`, 'g') : null;
+            try {
+                combinedKeywordRegex = parts.length > 0 ? new RegExp(`(${parts.join('|')})`, 'g') : null;
+            } catch (e) {
+                // 등록된 정규식 키워드 중 하나가 잘못됐을 때 하이라이팅 전체가 깨지지 않도록 방어
+                console.error('키워드 정규식 컴파일 실패 (잘못된 정규식 키워드 포함 가능):', e);
+                combinedKeywordRegex = null;
+            }
         }
 
         function createNewsCard(item, isFilteredBox = false) {

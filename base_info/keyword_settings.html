@@ -32,6 +32,10 @@
 
 <main class="flex-1 w-full max-w-5xl mx-auto p-6 space-y-6">
 
+    <div class="bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-2.5 text-[11px] text-slate-400">
+        💡 <code class="text-blue-300">/패턴/</code> 처럼 슬래시로 감싸면 정규표현식으로 등록됩니다 (예: <code class="text-blue-300">/삼성.*전자/</code>). 그 외엔 지금처럼 일반 텍스트로 매칭됩니다.
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         <!-- 기타 키워드 -->
@@ -233,6 +237,20 @@
             negative: "악재 키워드"
         };
 
+        // '/패턴/'처럼 슬래시로 감싼 키워드는 정규식으로 취급되므로(백엔드 keyword_matches()와 동일 규칙),
+        // 저장하기 전에 실제로 컴파일되는지 미리 검증해서 잘못된 정규식이 등록되는 걸 막는다.
+        function validateKeywordInput(kw) {
+            if (kw.length > 2 && kw.startsWith('/') && kw.endsWith('/')) {
+                try {
+                    new RegExp(kw.slice(1, -1));
+                } catch (e) {
+                    alert(`❌ 정규식 형식이 올바르지 않습니다: ${e.message}`);
+                    return false;
+                }
+            }
+            return true;
+        }
+
         async function loadKeywords() {
             try {
                 const res = await fetch('/api/keywords?mode=raw');
@@ -288,6 +306,8 @@
                 alert("추가할 키워드를 입력해 주세요.");
                 return;
             }
+
+            if (!validateKeywordInput(kw)) return;
 
             if (!categorizedKeywords[cat]) {
                 categorizedKeywords[cat] = [];
@@ -387,6 +407,8 @@
                 alert("제외할 단어를 입력해 주세요.");
                 return;
             }
+
+            if (!validateKeywordInput(bl)) return;
 
             if (blacklist.includes(bl)) {
                 alert("이미 등록된 제외 단어입니다.");

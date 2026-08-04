@@ -227,6 +227,20 @@ def load_keywords():
 def save_keywords(keywords): _safe_atomic_write(KEYWORD_DB_FILE, keywords)
 
 
+def keyword_matches(kw: str, title: str) -> bool:
+    """
+    '/패턴/'처럼 슬래시로 감싼 키워드는 정규식으로, 그 외에는 기존처럼 단순 부분 문자열로 매칭한다.
+    기존에 등록된 수천 개의 일반 키워드 동작은 그대로 유지된다.
+    """
+    if len(kw) > 2 and kw.startswith("/") and kw.endswith("/"):
+        pattern = kw[1:-1]
+        try:
+            return re.search(pattern, title) is not None
+        except re.error:
+            return False
+    return kw in title
+
+
 def load_blacklist():
     if os.path.exists(BLACKLIST_DB_FILE):
         try:
@@ -517,12 +531,12 @@ def rss_monitor_thread():
                         seen_links.add(link)
                         channel_new_count += 1
 
-                        if any(bl in title for bl in current_blacklist if bl.strip()):
+                        if any(keyword_matches(bl.strip(), title) for bl in current_blacklist if bl.strip()):
                             new_blacklisted_items.append(item)
                             print(f"    🗑️ [노이즈차단] {item['source']} ➔ 제목: {title}")
                         else:
                             new_stream_items.append(item)
-                            matched_kws = [kw for kw in flat_keywords if kw.strip() and kw in title]
+                            matched_kws = [kw for kw in flat_keywords if kw.strip() and keyword_matches(kw.strip(), title)]
 
                             if matched_kws:
                                 has_positive = any(kw in positive_set for kw in matched_kws)
