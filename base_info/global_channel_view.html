@@ -148,12 +148,28 @@
             return item.source === sourceName || item.source.includes(`(${sourceName})`);
         }
 
+        // 🔗 실시간/키워드포착/제외(격리) 3개 피드를 전부 합쳐서 링크 기준으로 중복 제거
+        async function fetchCombinedNews() {
+            const endpoints = ['/api/global-realtime-news', '/api/global-filtered-news', '/api/global-blacklisted-news'];
+            const responses = await Promise.all(endpoints.map(url => fetch(url).then(r => r.json())));
+            const seenLinks = new Set();
+            const merged = [];
+            responses.forEach(resp => {
+                (resp.news || []).forEach(item => {
+                    if (!seenLinks.has(item.link)) {
+                        seenLinks.add(item.link);
+                        merged.push(item);
+                    }
+                });
+            });
+            return merged;
+        }
+
         async function loadInitialNews() {
             try {
                 await fetchKeywords();
 
-                const res = await fetch('/api/global-news');
-                const newsList = await res.json();
+                const newsList = await fetchCombinedNews();
                 const container = document.getElementById('channel-news-container');
                 let html = "";
 
@@ -182,8 +198,7 @@
 
         async function updateLiveNews() {
             try {
-                const res = await fetch('/api/global-news');
-                const newsList = await res.json();
+                const newsList = await fetchCombinedNews();
                 const container = document.getElementById('channel-news-container');
                 const sorted = [...newsList].sort((a, b) => a.timestamp - b.timestamp);
                 let anyNewItem = false;
