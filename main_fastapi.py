@@ -706,13 +706,72 @@ async def post_keywords(updated_categorized: dict):
     return {"status": "success"}
 
 
+def _relocate_newly_blacklisted(new_keywords):
+    """
+    신규로 등록된 제외 키워드에 걸리는 기사를 실시간/필터링 피드에서 걷어내
+    격리 보관소로 소급 이동시킨다. (db_lock을 보유한 상태에서 호출되어야 함)
+    신규 키워드에 한해서만 검사하므로 전체 재검사 대비 부하가 크지 않다.
+    """
+    global cached_stream, cached_filtered, cached_blacklisted
+    if not new_keywords:
+        return
+
+    existing_blacklisted_links = {item["link"] for item in cached_blacklisted}
+    moved_items = []
+    remaining_stream = []
+    remaining_filtered = []
+
+    for item in cached_stream:
+        title = item.get("title", "")
+        if any(keyword_matches(kw, title) for kw in new_keywords):
+            if item["link"] not in existing_blacklisted_links:
+                moved_items.append(item)
+                existing_blacklisted_links.add(item["link"])
+        else:
+            remaining_stream.append(item)
+
+    moved_links = {item["link"] for item in moved_items}
+
+    for item in cached_filtered:
+        if item["link"] in moved_links:
+            continue
+        title = item.get("title", "")
+        if any(keyword_matches(kw, title) for kw in new_keywords):
+            if item["link"] not in existing_blacklisted_links:
+                moved_items.append(item)
+                moved_links.add(item["link"])
+                existing_blacklisted_links.add(item["link"])
+        else:
+            remaining_filtered.append(item)
+
+    if not moved_items:
+        return
+
+    cached_stream[:] = remaining_stream
+    cached_filtered[:] = remaining_filtered
+    cached_blacklisted[:0] = moved_items
+    cached_blacklisted.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    _safe_atomic_write(STREAM_NEWS_FILE, remaining_stream)
+    _safe_atomic_write(FILTERED_NEWS_FILE, remaining_filtered)
+    _safe_atomic_append_write(BLACKLISTED_NEWS_FILE, moved_items)
+
+    print(f"🗑️ [소급 격리조치] 신규 제외 키워드로 {len(moved_items)}건의 기사를 격리 보관소로 이동했습니다.")
+
+
 @app.post("/api/blacklist")
 async def post_blacklist(updated_blacklist: list = Body(...)):
     global cached_blacklist
     with db_lock:
+        old_set = {kw.strip() for kw in cached_blacklist if kw.strip()}
+        new_set = {kw.strip() for kw in updated_blacklist if kw.strip()}
+        newly_added = list(new_set - old_set)
+
         cached_blacklist.clear()
         cached_blacklist.extend(updated_blacklist)
         save_blacklist(cached_blacklist)
+
+        _relocate_newly_blacklisted(newly_added)
     return {"status": "success"}
 
 
