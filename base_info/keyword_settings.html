@@ -315,6 +315,8 @@
             if (categorizedKeywords[cat] && categorizedKeywords[cat][index] !== undefined) {
                 const targetKw = categorizedKeywords[cat][index];
 
+                if (!confirm(`[${categoryNames[cat]}]의 '${targetKw}' 키워드를 정말 삭제하시겠습니까?`)) return;
+
                 // 임시 데이터 복사본 생성 후 해당 아이템 제거
                 const tempKeywords = JSON.parse(JSON.stringify(categorizedKeywords));
                 tempKeywords[cat].splice(index, 1);
@@ -403,8 +405,11 @@
         }
 
         async function deleteBlacklist(index) {
-            const updatedList = [...blacklist];
             const targetBl = blacklist[index];
+
+            if (!confirm(`제외 단어 '${targetBl}' 를 정말 삭제하시겠습니까?`)) return;
+
+            const updatedList = [...blacklist];
             updatedList.splice(index, 1);
 
             const isSuccess = await updateBlacklistBackend(updatedList);
