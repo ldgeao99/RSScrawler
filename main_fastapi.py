@@ -84,7 +84,25 @@ def shorten_telegram_link(link: str) -> str:
     (저장/화면 표시용 원본 link는 그대로 유지되고, 이 함수는 텔레그램 메시지 조립 시에만 쓰인다.)
     """
     match = re.match(r'^(https?://www\.financialjuice\.com/News/\d+)/', link)
-    return f"{match.group(1)}/" if match else link
+    if match:
+        return f"{match.group(1)}/"
+
+    # 🔗 구글 뉴스(한국경제_* 등 site:hankyung.com 검색 경유) 링크는 실제 기사 주소가
+    # 클라이언트 JS 리다이렉트로만 풀리는 base64 슬러그라 잘라낼 수 없다.
+    # 텔레그램 전송용으로만 TinyURL 단축 URL을 발급받아 대체한다 (실패 시 원본 링크 그대로 사용).
+    if "news.google.com" in link and len(link) > 150:
+        try:
+            resp = requests.get(
+                "https://tinyurl.com/api-create.php",
+                params={"url": link},
+                timeout=5,
+            )
+            if resp.status_code == 200 and resp.text.strip().startswith("https://tinyurl.com/"):
+                return resp.text.strip()
+        except Exception as e:
+            logger.warning(f"⚠️ [링크 단축 실패] TinyURL 발급 실패, 원본 링크 사용: {e}")
+
+    return link
 
 
 def send_telegram_notification(items):
