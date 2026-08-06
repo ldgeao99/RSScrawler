@@ -177,13 +177,42 @@ def should_translate_title(url: str) -> bool:
     return any(domain in url for domain in ENGLISH_TITLE_TRANSLATE_DOMAINS)
 
 
+# 콜론(':') 왼쪽 발언자 표기에서, 번역기가 오역하기 쉬운 조각을 고정 치환한다.
+# (예: 'Fed's Powell' 전체를 번역기에 넘기면 'Fed's'만 따로 매끄럽게 못 살릴 때가 있어 직접 치환)
+FINANCIALJUICE_PREFIX_REPLACEMENTS = {
+    r"Fed[’']s": "연준의",
+    r"Axios": "악시오스",
+}
+
+# 대시('-') 오른쪽 언론사 표기에 특정 매체가 있으면, 맨 오른쪽에 설명을 덧붙인다.
+FINANCIALJUICE_SUFFIX_ANNOTATIONS = {
+    r"Tasnim": "(이란 혁명수비대)",
+    r"IRNA": "(이란 정부 대변)",
+}
+
+
+def _apply_financialjuice_prefix_replacements(prefix_text: str) -> str:
+    for pattern, replacement in FINANCIALJUICE_PREFIX_REPLACEMENTS.items():
+        prefix_text = re.sub(pattern, replacement, prefix_text)
+    return prefix_text
+
+
+def _apply_financialjuice_suffix_annotations(suffix_text: str) -> str:
+    notes = [note for pattern, note in FINANCIALJUICE_SUFFIX_ANNOTATIONS.items()
+             if re.search(pattern, suffix_text)]
+    if notes:
+        suffix_text = f"{suffix_text} {' '.join(notes)}"
+    return suffix_text
+
+
 def translate_financialjuice_title(title: str) -> str:
     """
     FinancialJuice 전용 번역 규칙.
     'COOK: Apple sees strong demand' 처럼 콜론(':') 왼쪽은 발언자 이름 등 고유명사인 경우가
     많아 그대로 두지 않으면 'Cook(사람 이름)'이 '요리하다'로 오번역되는 문제가 생긴다.
     'Oil prices jump - Reuters' 처럼 대시('-') 오른쪽은 언론사명이라 역시 번역하지 않는다.
-    가운데 본문만 번역하고, 콜론 왼쪽/대시 오른쪽은 원문 그대로 이어붙인다.
+    가운데 본문만 번역하고, 콜론 왼쪽/대시 오른쪽은 원문 그대로 이어붙이되(단, 위 고정 치환/주석
+    규칙만 적용한다).
     """
     prefix = ""
     suffix = ""
@@ -192,14 +221,16 @@ def translate_financialjuice_title(title: str) -> str:
     # ':' 왼쪽 (발언자 이름 등) - 콜론 뒤에 공백이 있는 경우만 구분자로 인정해 "10:30" 같은 시간 표기와 구분
     colon_match = re.match(r'^([^:]{1,40}):\s+(.*)$', body)
     if colon_match:
-        prefix = f"{colon_match.group(1)}: "
+        prefix_text = _apply_financialjuice_prefix_replacements(colon_match.group(1))
+        prefix = f"{prefix_text}: "
         body = colon_match.group(2)
 
     # '-' 오른쪽 (언론사명) - 마지막 " - "를 기준으로 분리해 co-founder 같은 붙어있는 하이픈과 구분
     dash_match = re.match(r'^(.*)\s-\s([^-]{1,40})$', body)
     if dash_match:
         body = dash_match.group(1)
-        suffix = f" - {dash_match.group(2)}"
+        suffix_text = _apply_financialjuice_suffix_annotations(dash_match.group(2))
+        suffix = f" - {suffix_text}"
 
     translated_body = translate_title_to_korean(body) if body.strip() else body
     return f"{prefix}{translated_body}{suffix}"
