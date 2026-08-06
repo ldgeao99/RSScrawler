@@ -221,6 +221,7 @@ FINANCIALJUICE_PREFIX_REPLACEMENTS = {
 FINANCIALJUICE_SUFFIX_ANNOTATIONS = {
     r"Tasnim": "(이란 혁명수비대)",
     r"IRNA": "(이란 정부 대변)",
+    r"Fars News": "(이란 혁명수비대)",
 }
 
 
