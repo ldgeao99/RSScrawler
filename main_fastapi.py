@@ -15,6 +15,7 @@ from curl_cffi import requests
 import logging
 from contextlib import asynccontextmanager  # ★ 최신 FastAPI lifespan 설정을 위해 추가
 import asyncio  # ★ 비동기 스케줄러 구동을 위해 추가
+from rapidfuzz import fuzz  # 📨 텔레그램 유사기사 중복 억제용
 
 from dotenv import load_dotenv
 
@@ -75,6 +76,38 @@ SENTIMENT_EMOJI = {
     "mixed": "🟡",
     "neutral": "🔵",
 }
+
+
+# 📨 [텔레그램 유사기사 억제] 여러 매체가 같은 이슈를 동시에 보도하면 제목은 조금씩 달라도
+# 사실상 같은 뉴스라 텔레그램에 계속 알림이 오면 피로가 누적된다. 최근 몇 시간 안에 이미
+# 텔레그램으로 보낸 제목과 유사도가 높으면 이번 건은 알림만 건너뛴다(필터링 목록에는 그대로 쌓임).
+TELEGRAM_DEDUP_WINDOW_SECONDS = 3 * 60 * 60  # 3시간
+TELEGRAM_DEDUP_SIMILARITY_THRESHOLD = 60     # rapidfuzz token_sort_ratio(0~100). 실측 백테스트로 보정한 값(오탐 없이 억제율 극대화)
+
+
+def filter_telegram_duplicates(items, recent_titles):
+    """
+    recent_titles: [(timestamp, title), ...] 리스트. 만료된 항목을 정리하고, 알림을 보낼 항목을
+    반환하면서 그 제목들을 recent_titles에 추가한다(in-place). 국내/해외 스레드가 각자 자기 리스트를
+    넘겨주므로 서로 섞이지 않는다.
+    """
+    now = time.time()
+    recent_titles[:] = [(ts, t) for ts, t in recent_titles if now - ts < TELEGRAM_DEDUP_WINDOW_SECONDS]
+
+    to_notify = []
+    for item in items:
+        title = item.get("title", "")
+        is_duplicate = any(
+            fuzz.token_sort_ratio(title, prev_title) >= TELEGRAM_DEDUP_SIMILARITY_THRESHOLD
+            for _, prev_title in recent_titles
+        )
+        if is_duplicate:
+            print(f"    🔇 [유사기사 억제] 최근 {TELEGRAM_DEDUP_WINDOW_SECONDS // 3600}시간 내 비슷한 기사 이미 전송됨 ➔ {title[:30]}...")
+            continue
+        to_notify.append(item)
+        recent_titles.append((now, title))
+
+    return to_notify
 
 
 def shorten_telegram_link(link: str) -> str:
@@ -549,6 +582,9 @@ def rss_monitor_thread(
     BACKOFF_STEP_SECONDS = 60      # 1회차 60초, 2회차 120초, 3회차 180초 ... 선형 증가
     BACKOFF_CAP_SECONDS = 1800     # 최대 30분
 
+    # 📨 [텔레그램 유사기사 억제] 이 스레드(국내 또는 해외)에서 최근 보낸 제목들을 기억한다.
+    recent_telegram_titles = []
+
     while True:
         try:
             # ⏰ KST 기준 정확한 '오늘'과 '어제'의 달력상 날짜(Date) 정의
@@ -826,10 +862,14 @@ def rss_monitor_thread(
 
                         print(f"    └ 📡 [{name}] 신규 기사 즉시 반영 ➔ 실시간: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
 
-                        if new_filtered_items and not is_first_scan:
-                            send_telegram_notification(new_filtered_items)
-                        elif new_filtered_items and is_first_scan:
-                            print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
+                        if new_filtered_items:
+                            # 첫 스캔이든 아니든 유사기사 필터를 먼저 태워서, 재시작 직후 밀린 기사들도
+                            # recent_telegram_titles에 기록해 둔다(다음 사이클에 같은 이슈로 또 안 울리게).
+                            notify_items = filter_telegram_duplicates(new_filtered_items, recent_telegram_titles)
+                            if is_first_scan:
+                                print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
+                            elif notify_items:
+                                send_telegram_notification(notify_items)
 
                         total_new_stream += len(new_stream_items)
                         total_new_filtered += len(new_filtered_items)
