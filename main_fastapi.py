@@ -215,6 +215,7 @@ def should_translate_title(url: str) -> bool:
 FINANCIALJUICE_PREFIX_REPLACEMENTS = {
     r"Fed[’']s": "연준의",
     r"Axios": "악시오스",
+    r"US Treasury Secretary": "미국 재무부 장관",
 }
 
 # 대시('-') 오른쪽 언론사 표기에 특정 매체가 있으면, 맨 오른쪽에 설명을 덧붙인다.
