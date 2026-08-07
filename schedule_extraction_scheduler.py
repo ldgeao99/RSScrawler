@@ -184,6 +184,29 @@ def push_schedules_to_firestore(schedule_results: list):
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+
+def send_batch_telegram_notification(success: bool, message: str):
+    """일정 자동 추출 배치가 끝날 때마다 결과를 텔레그램으로 통지. 설정 없으면 조용히 스킵."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+
+    emoji = "✅" if success else "❌"
+    text = f"📅 일정 자동 추출 배치 완료\n{emoji} {message}"
+
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.warning(f"⚠️ [배치 완료 알림] 텔레그램 전송 실패 ({resp.status_code}): {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"⚠️ [배치 완료 알림] 텔레그램 전송 에러: {e}")
+
 MAX_CONCURRENT_REQUESTS = 10
 SIMILARITY_THRESHOLD = 50  # 뉴스 제목 간의 중복 판정 임계값
 
@@ -558,9 +581,11 @@ async def daily_schedule_extraction_scheduler():
         try:
             success, message = await main()
             report_batch_run("schedule_extraction", "일정 자동 추출", next_run_at, success, message)
+            send_batch_telegram_notification(success, message)
         except Exception as e:
             logger.error(f"❌ [일정 추출 스케줄러 에러] 정기 실행 중 치명적 오류 발생: {e}")
             report_batch_run("schedule_extraction", "일정 자동 추출", next_run_at, False, f"오류 발생: {e}")
+            send_batch_telegram_notification(False, f"오류 발생: {e}")
             await asyncio.sleep(10)  # 루프 파괴 방지용 유예 코드
 
 
