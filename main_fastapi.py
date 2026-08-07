@@ -928,6 +928,11 @@ async def get_rss_settings():
     return FileResponse("base_info/rss_settings.html")
 
 
+@app.get("/batch-dashboard")
+async def get_batch_dashboard():
+    return FileResponse("base_info/batch_dashboard.html")
+
+
 # 🌐 [해외 뉴스] 국내 화면과 완전히 분리된 별도 페이지 세트
 @app.get("/global")
 @app.get("/global-index.html")

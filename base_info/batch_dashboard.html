@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>새벽 배치 스케줄러 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col overflow-x-hidden">
+
+    <header class="bg-slate-900 border-b border-slate-800 px-4 lg:px-8 py-3 lg:py-4 flex flex-col lg:flex-row gap-2 lg:gap-0 lg:justify-between lg:items-center shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="text-xl shrink-0">🗂️</span>
+            <h1 class="text-sm lg:text-base font-extrabold tracking-wide text-white flex flex-wrap items-center gap-2 min-w-0">
+                새벽 배치 스케줄러 대시보드
+                <span class="text-xs text-amber-400 font-bold bg-amber-950/60 border border-amber-900/40 px-2.5 py-0.5 rounded-full shrink-0">실행 이력 모니터링</span>
+            </h1>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+            <span id="last-refreshed" class="text-[10px] lg:text-xs text-slate-500 font-mono whitespace-nowrap"></span>
+            <button onclick="window.close()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] lg:text-xs text-slate-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm whitespace-nowrap shrink-0">
+                🚪 창 닫기
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 w-full max-w-5xl mx-auto px-4 py-8 space-y-4">
+        <p class="text-[11px] text-slate-500">💡 매일 새벽 3개 스케줄러(백업 00:00 → 일정 추출 00:15 → 기업명 동기화 01:00 KST)가 순서대로 실행되고, 실행 결과가 여기 자동으로 기록됩니다. 15초마다 자동 갱신됩니다.</p>
+
+        <div id="batch-cards" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="text-slate-600 text-xs py-16 text-center col-span-3">배치 실행 이력을 불러오는 중입니다...</div>
+        </div>
+    </main>
+
+    <footer class="bg-slate-900 border-t border-slate-800/80 px-8 py-3 text-xs text-slate-500 flex justify-between items-center shrink-0">
+        <div>현재 모드: <strong>배치 실행 이력 조회 전용</strong></div>
+        <a href="/" class="text-blue-400 hover:text-blue-300 font-bold transition-colors">
+            🏠 메인 감시센터로 가기 ▶
+        </a>
+    </footer>
+
+    <script>
+        const FIREBASE_PROJECT_ID = "stockcalender-13042";
+        const BATCH_LOGS_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/batch_logs`;
+
+        // 문서 ID -> 표시 순서/아이콘 (스케줄러 실행 순서 그대로: 백업 -> 일정추출 -> 기업명동기화)
+        const BATCH_ORDER = {
+            "backup_cleanup": { order: 0, icon: "💾" },
+            "schedule_extraction": { order: 1, icon: "📅" },
+            "company_sync": { order: 2, icon: "🏢" },
+        };
+
+        function parseFirestoreDoc(doc) {
+            const fields = doc.fields || {};
+            const get = (key) => {
+                const f = fields[key];
+                if (!f) return "";
+                if ("stringValue" in f) return f.stringValue;
+                if ("booleanValue" in f) return f.booleanValue;
+                return "";
+            };
+            const docId = doc.name.split('/').pop();
+            return {
+                id: docId,
+                batchName: get("batchName") || docId,
+                lastRunAt: get("lastRunAt") || "",
+                nextRunAt: get("nextRunAt") || "",
+                success: get("success") === true,
+                message: get("message") || "",
+            };
+        }
+
+        function formatRelative(target) {
+            if (!target) return "";
+            const diffMs = target.getTime() - Date.now();
+            const abs = Math.abs(diffMs);
+            const mins = Math.floor(abs / 60000);
+            const hrs = Math.floor(mins / 60);
+            const remMins = mins % 60;
+            const label = hrs > 0 ? `${hrs}시간 ${remMins}분` : `${remMins}분`;
+            return diffMs >= 0 ? `${label} 후` : `${label} 지남`;
+        }
+
+        function renderCard(item) {
+            const statusBadge = item.success
+                ? `<span class="text-xs bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded font-mono font-black">✅ 성공</span>`
+                : `<span class="text-xs bg-rose-950/80 text-rose-400 border border-rose-500/40 px-2.5 py-0.5 rounded font-mono font-black animate-pulse">❌ 실패</span>`;
+
+            const meta = BATCH_ORDER[item.id] || { icon: "📦" };
+            const nextRunDate = item.nextRunAt ? new Date(item.nextRunAt.replace(" ", "T") + "+09:00") : null;
+
+            return `
+                <div class="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">${meta.icon}</span>
+                            <h2 class="text-sm font-extrabold text-white">${item.batchName}</h2>
+                        </div>
+                        ${statusBadge}
+                    </div>
+                    <div class="space-y-1.5 text-xs">
+                        <div class="flex justify-between text-slate-400">
+                            <span>마지막 구동시간</span>
+                            <span class="font-mono text-slate-200 font-bold">${item.lastRunAt || "-"}</span>
+                        </div>
+                        <div class="flex justify-between text-slate-400">
+                            <span>다음 구동예정시간</span>
+                            <span class="font-mono text-slate-200 font-bold">
+                                ${item.nextRunAt || "-"}
+                                ${nextRunDate ? `<span class="text-slate-500 font-normal">(${formatRelative(nextRunDate)})</span>` : ""}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="pt-2 border-t border-slate-800/80">
+                        <p class="text-[11px] text-slate-500 mb-1">상세 메시지</p>
+                        <p class="text-xs text-slate-300 leading-relaxed break-words">${item.message || "아직 실행 이력이 없습니다."}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadBatchLogs() {
+            const container = document.getElementById('batch-cards');
+            try {
+                const res = await fetch(BATCH_LOGS_URL);
+                const data = await res.json();
+                const docs = (data.documents || []).map(parseFirestoreDoc);
+
+                // 알려진 3개 배치를 정해진 순서로, 나머지는 뒤에 이름순으로 붙인다.
+                docs.sort((a, b) => {
+                    const oa = BATCH_ORDER[a.id] ? BATCH_ORDER[a.id].order : 99;
+                    const ob = BATCH_ORDER[b.id] ? BATCH_ORDER[b.id].order : 99;
+                    return oa - ob;
+                });
+
+                if (docs.length === 0) {
+                    container.innerHTML = `<div class="text-slate-600 text-xs py-16 text-center col-span-3">아직 기록된 배치 실행 이력이 없습니다. 다음 새벽 배치 실행 이후 표시됩니다.</div>`;
+                    return;
+                }
+
+                container.innerHTML = docs.map(renderCard).join("");
+                document.getElementById('last-refreshed').textContent = `마지막 조회: ${new Date().toLocaleTimeString()}`;
+            } catch (err) {
+                console.error("배치 로그 조회 실패:", err);
+                container.innerHTML = `<div class="text-rose-500 text-xs py-16 text-center col-span-3">배치 실행 이력을 불러오지 못했습니다. 잠시 후 다시 시도합니다.</div>`;
+            }
+        }
+
+        loadBatchLogs();
+        setInterval(loadBatchLogs, 15000);
+    </script>
+</body>
+</html>

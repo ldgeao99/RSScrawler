@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
 
 from cost_tracker import CostTracker
+from batch_logger import report_batch_run
 
 # ==========================================================
 # ⚙️ 파일 경로 설정
@@ -433,6 +434,7 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
 # 🚀 통합 제어 메인 오케스트레이터
 # ==========================================================
 async def main(input_file: str = None, output_file: str = None):
+    """반환값: (success: bool, message: str) - 배치 로그 기록용 실행 결과 요약."""
     if not input_file or not output_file:
         default_input, default_output = get_yesterday_file_paths()
         input_file = input_file or default_input
@@ -481,7 +483,7 @@ async def main(input_file: str = None, output_file: str = None):
             logger.info("📅 추출 대상인 일정 뉴스가 존재하지 않아 파이프라인을 종료합니다.")
             cost_tracker.print_summary()
             cost_tracker.check_budget(monthly_budget_krw=5000)
-            return
+            return True, f"대상 뉴스 없음 (원본 {total_raw_count}건 중 추출 대상 0건)"
 
         # 💰 [예산 하드 캡] Stage3가 비용의 대부분을 차지하므로, 물량이 갑자기 튀어도
         # 여기서 하루 처리 상한을 넘지 않도록 강제로 잘라낸다 (오래된/우선순위 낮은 항목부터 제외)
@@ -514,10 +516,14 @@ async def main(input_file: str = None, output_file: str = None):
         cost_tracker.print_summary()
         cost_tracker.check_budget(monthly_budget_krw=5000)
 
+        return True, f"원본 {total_raw_count}건 → 추출 {len(final_schedule_results)}건 저장 완료"
+
     except FileNotFoundError:
         logger.error(f"❌ 백업 파일을 찾을 수 없습니다: '{input_file}'")
+        return False, f"백업 파일을 찾을 수 없음: '{input_file}'"
     except Exception as e:
         logger.error(f"❌ 파이프라인 가동 중 치명적 예외 발생: {e}")
+        return False, f"파이프라인 가동 중 예외 발생: {e}"
 
 
 # ==========================================================
@@ -548,10 +554,13 @@ async def daily_schedule_extraction_scheduler():
         logger.info(f"⏳ 다음 일정 추출 배치까지 대기: {seconds_until_run / 60:.1f}분 후 ({target.strftime('%Y-%m-%d %H:%M:%S')} KST)")
         await asyncio.sleep(seconds_until_run)
 
+        next_run_at = target + timedelta(days=1)
         try:
-            await main()
+            success, message = await main()
+            report_batch_run("schedule_extraction", "일정 자동 추출", next_run_at, success, message)
         except Exception as e:
             logger.error(f"❌ [일정 추출 스케줄러 에러] 정기 실행 중 치명적 오류 발생: {e}")
+            report_batch_run("schedule_extraction", "일정 자동 추출", next_run_at, False, f"오류 발생: {e}")
             await asyncio.sleep(10)  # 루프 파괴 방지용 유예 코드
 
 

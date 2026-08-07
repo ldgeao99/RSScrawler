@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from batch_logger import report_batch_run
+
 logger = logging.getLogger("news_logger")
 
 # ====================================================
@@ -37,10 +39,13 @@ async def daily_backup_and_cleanup_scheduler(db_lock, file_paths, memory_caches,
         # 자정 정각이 될 때까지 비동기 슬립 대기
         await asyncio.sleep(seconds_until_midnight)
 
+        next_run_at = tomorrow + timedelta(days=1)
         try:
             execute_midnight_processing(db_lock, file_paths, memory_caches, load_content_func, print_status_func)
+            report_batch_run("backup_cleanup", "백업 및 메모리 정리", next_run_at, True, "정상 완료")
         except Exception as e:
             logger.error(f"❌ [백업 에러] 자정 백업 및 정리 작업 중 치명적 오류 발생: {e}")
+            report_batch_run("backup_cleanup", "백업 및 메모리 정리", next_run_at, False, f"오류 발생: {e}")
             await asyncio.sleep(10)  # 루프 파괴 방지용 유예 코드
 
 

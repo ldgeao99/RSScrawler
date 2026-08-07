@@ -4,6 +4,8 @@ from datetime import datetime, timezone, timedelta
 
 import FinanceDataReader as fdr
 
+from batch_logger import report_batch_run
+
 logger = logging.getLogger("news_logger")
 
 # 다른 두 스케줄러(00:00 백업, 00:15 일정추출)와 겹치지 않게 01:00 KST로 잡는다.
@@ -20,11 +22,7 @@ def fetch_krx_company_names() -> list:
 
 def sync_company_kr_keywords(cached_keywords: dict, db_lock, save_keywords_func) -> int:
     """새로 상장된 기업명을 company_kr 키워드 목록에 추가하고, 추가된 건수를 반환한다."""
-    try:
-        krx_names = fetch_krx_company_names()
-    except Exception as e:
-        logger.error(f"❌ [기업명 동기화] KRX 상장 종목 목록 조회 실패: {e}")
-        return 0
+    krx_names = fetch_krx_company_names()
 
     if not krx_names:
         logger.warning("⚠️ [기업명 동기화] KRX 조회 결과가 비어있어 이번 실행은 건너뜁니다.")
@@ -63,11 +61,14 @@ async def daily_company_sync_scheduler(cached_keywords: dict, db_lock, save_keyw
         logger.info(f"⏳ 다음 기업명 동기화 배치까지 대기: {seconds_until_run / 60:.1f}분 후 ({target.strftime('%Y-%m-%d %H:%M:%S')} KST)")
         await asyncio.sleep(seconds_until_run)
 
+        next_run_at = target + timedelta(days=1)
         try:
             # fdr.StockListing은 동기/블로킹 호출이라 이벤트 루프를 막지 않도록 스레드로 위임
-            await asyncio.to_thread(sync_company_kr_keywords, cached_keywords, db_lock, save_keywords_func)
+            added = await asyncio.to_thread(sync_company_kr_keywords, cached_keywords, db_lock, save_keywords_func)
+            report_batch_run("company_sync", "상장사 기업명 동기화", next_run_at, True, f"신규 상장 종목 {added}건 추가")
         except Exception as e:
             logger.error(f"❌ [기업명 동기화 스케줄러 에러] 정기 실행 중 치명적 오류 발생: {e}")
+            report_batch_run("company_sync", "상장사 기업명 동기화", next_run_at, False, f"오류 발생: {e}")
             await asyncio.sleep(10)  # 루프 파괴 방지용 유예 코드
 
 
