@@ -138,7 +138,7 @@ def shorten_telegram_link(link: str) -> str:
     return link
 
 
-def send_telegram_notification(items):
+def send_telegram_notification(items, is_global=False):
     """키워드 포착된 신규 기사를 텔레그램으로 실시간 전송. 설정 없으면 조용히 스킵."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not items:
         return
@@ -153,6 +153,9 @@ def send_telegram_notification(items):
         title = html.escape(raw_title)
         link = html.escape(shorten_telegram_link(item.get("link", "")))
         emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
+        # 감성 표시가 1순위 시그널이라 자리를 유지하고, 해외발 기사만 그 바로 뒤에 🌐를 보조로 붙인다.
+        if is_global:
+            emoji = f"{emoji}🌐"
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
         text = f'{emoji} {title}\n\n{link}\n​'
@@ -217,6 +220,7 @@ FINANCIALJUICE_PREFIX_REPLACEMENTS = {
     r"Axios": "악시오스",
     r"US Treasury Secretary": "미국 재무부 장관",
     r"Iran[’']s President": "이란의 대통령",
+    r"Iran[’']s IRGC spokesman": "이란 혁명수비대 대변인",
 }
 
 # 대시('-') 오른쪽 언론사 표기에 특정 매체가 있으면, 맨 오른쪽에 설명을 덧붙인다.
@@ -572,6 +576,7 @@ def rss_monitor_thread(
     filtered_file,
     blacklisted_file,
     label="",
+    is_global=False,
 ):
     print(f"📢 {label}RSS 실시간 백그라운드 관제 엔진이 가동되었습니다.")
 
@@ -872,7 +877,7 @@ def rss_monitor_thread(
                             if is_first_scan:
                                 print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
                             elif notify_items:
-                                send_telegram_notification(notify_items)
+                                send_telegram_notification(notify_items, is_global=is_global)
 
                         total_new_stream += len(new_stream_items)
                         total_new_filtered += len(new_filtered_items)
@@ -1366,6 +1371,7 @@ if __name__ == "__main__":
         target=rss_monitor_thread,
         args=(cached_rss, cached_keywords, cached_blacklist, cached_stream, cached_filtered, cached_blacklisted,
               rss_response_status, STREAM_NEWS_FILE, FILTERED_NEWS_FILE, BLACKLISTED_NEWS_FILE, ""),
+        kwargs={"is_global": False},
         daemon=True,
     )
     monitor.start()
@@ -1375,6 +1381,7 @@ if __name__ == "__main__":
         args=(cached_global_rss, cached_global_keywords, cached_global_blacklist, cached_global_stream,
               cached_global_filtered, cached_global_blacklisted, global_rss_response_status,
               GLOBAL_STREAM_NEWS_FILE, GLOBAL_FILTERED_NEWS_FILE, GLOBAL_BLACKLISTED_NEWS_FILE, "[해외] "),
+        kwargs={"is_global": True},
         daemon=True,
     )
     global_monitor.start()
