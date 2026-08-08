@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로그인 : 실시간 뉴스 감시 시그널 감시센터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex items-center justify-center px-4">
+
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-800/80 rounded-2xl p-8 shadow-xl">
+        <div class="flex items-center gap-2 mb-6">
+            <span class="text-2xl">📡</span>
+            <h1 class="text-base font-extrabold tracking-wide text-white">감시센터 로그인</h1>
+        </div>
+
+        <form id="loginForm" class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">아이디</label>
+                <input type="text" id="username" autocomplete="username"
+                       class="w-full bg-slate-950 border border-slate-800 text-sm px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-1.5">비밀번호</label>
+                <input type="password" id="password" autocomplete="current-password"
+                       class="w-full bg-slate-950 border border-slate-800 text-sm px-4 py-2.5 rounded-lg focus:outline-none focus:border-emerald-500 text-slate-100">
+            </div>
+
+            <div id="errorMsg" class="hidden text-xs text-rose-400 font-semibold"></div>
+
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-sm text-white px-6 py-2.5 rounded-lg font-bold transition-colors shadow-md">
+                로그인
+            </button>
+        </form>
+
+        <p class="text-[11px] text-slate-600 mt-5 text-center">한 번 로그인하면 90일간 다시 로그인하지 않아도 됩니다.</p>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorMsg = document.getElementById('errorMsg');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorMsg.classList.add('hidden');
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    errorMsg.textContent = data.detail || '로그인에 실패했습니다.';
+                    errorMsg.classList.remove('hidden');
+                    return;
+                }
+
+                const params = new URLSearchParams(window.location.search);
+                const next = params.get('next');
+                window.location.href = (next && next.startsWith('/')) ? next : '/';
+            } catch (err) {
+                errorMsg.textContent = '서버 통신 중 오류가 발생했습니다.';
+                errorMsg.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

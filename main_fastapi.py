@@ -3,6 +3,9 @@ import re
 import json
 import html
 import time
+import hmac
+import base64
+import hashlib
 import calendar  # ★ 시간대 보정을 위해 추가된 표준 라이브러리
 import random
 import secrets
@@ -25,9 +28,9 @@ import global_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
 
-from fastapi import Depends, FastAPI, Body, HTTPException, status
-from fastapi.responses import FileResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import FastAPI, Body, HTTPException, Request, status
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
+from fastapi.security import HTTPBasicCredentials
 import uvicorn
 
 load_dotenv()
@@ -36,21 +39,46 @@ load_dotenv()
 # 🔐 [인증] 서버가 0.0.0.0으로 바인딩되어 외부에서도 도달 가능하므로,
 # 대시보드 열람 + 모든 API를 HTTP Basic Auth로 전면 보호한다.
 # ====================================================
-security = HTTPBasic()
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
+# 📱 [로그인 유지] 매번 재접속마다 뜨는 브라우저 기본 인증창 대신, 로그인 성공 시
+# 장기 유효(90일) 쿠키를 발급해 모바일에서도 앱/탭을 껐다 켜도 다시 로그인하지 않게 한다.
+SESSION_COOKIE_NAME = "admin_session"
+SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90  # 90일
+# 세션 서명 비밀키: 별도 SESSION_SECRET이 없으면 관리자 비밀번호로부터 파생 (비밀번호 변경 시 기존 세션 자동 무효화)
+SESSION_SECRET = os.environ.get("SESSION_SECRET") or hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
-        logger.error("❌ ADMIN_USERNAME/ADMIN_PASSWORD가 .env에 설정되지 않아 모든 요청을 차단합니다.")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, headers={"WWW-Authenticate": "Basic"})
 
+def _sign(payload: str) -> str:
+    return hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def create_session_token(username: str) -> str:
+    expires_at = int(time.time()) + SESSION_MAX_AGE_SECONDS
+    payload = f"{username}:{expires_at}"
+    return f"{payload}:{_sign(payload)}"
+
+
+def verify_session_token(token: str) -> bool:
+    if not token or token.count(":") != 2:
+        return False
+    username, expires_at, signature = token.split(":")
+    payload = f"{username}:{expires_at}"
+    if not hmac.compare_digest(signature, _sign(payload)):
+        return False
+    if int(expires_at) < int(time.time()):
+        return False
+    return secrets.compare_digest(username, ADMIN_USERNAME)
+
+
+def verify_basic_credentials(credentials: HTTPBasicCredentials) -> bool:
+    if not ADMIN_USERNAME or not ADMIN_PASSWORD or credentials is None:
+        return False
     is_user_ok = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
     is_pass_ok = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
-    if not (is_user_ok and is_pass_ok):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, headers={"WWW-Authenticate": "Basic"})
-    return True
+    return is_user_ok and is_pass_ok
+
 
 # 로거 설정
 logging.basicConfig(level=logging.INFO)
@@ -532,8 +560,36 @@ MEMORY_CACHES_CONFIG_GLOBAL = {
 app = FastAPI(
     title="실시간 뉴스 감시 시그널 감시센터 API",
     description="FastAPI 기반 고속 비동기 트레이딩 뉴스 관제 백엔드",
-    dependencies=[Depends(verify_admin)]  # 대시보드 + 모든 API 라우트 전면 인증 보호
 )
+
+
+# 🔐 [인증 미들웨어] /login 자체는 누구나 접근 가능, 그 외 모든 경로는
+# 세션 쿠키(우선) 또는 HTTP Basic Auth(curl 등 비브라우저 클라이언트용 하위호환) 중 하나로 통과해야 한다.
+# 페이지 라우트(비 /api)는 인증 실패 시 /login으로 리다이렉트, /api 라우트는 401 JSON을 반환한다.
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if request.url.path == "/login" or request.url.path.startswith("/static"):
+        return await call_next(request)
+
+    session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
+    authorized = verify_session_token(session_token)
+
+    if not authorized:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("basic "):
+            try:
+                decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+                basic_username, _, basic_password = decoded.partition(":")
+                authorized = verify_basic_credentials(HTTPBasicCredentials(username=basic_username, password=basic_password))
+            except Exception:
+                authorized = False
+
+    if not authorized:
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(status_code=401, content={"detail": "인증이 필요합니다."})
+        return RedirectResponse(url=f"/login?next={urllib.parse.quote(request.url.path)}", status_code=302)
+
+    return await call_next(request)
 
 
 # ----------------------------------------------------
@@ -911,6 +967,33 @@ def rss_monitor_thread(
 # ----------------------------------------------------
 # 📡 FastAPI 엔드포인트 제어
 # ----------------------------------------------------
+@app.get("/login")
+async def get_login_page():
+    return FileResponse("base_info/login.html")
+
+
+@app.post("/login")
+async def post_login(payload: dict = Body(...)):
+    username = payload.get("username", "")
+    password = payload.get("password", "")
+
+    if not ADMIN_USERNAME or not ADMIN_PASSWORD:
+        raise HTTPException(status_code=500, detail="서버에 관리자 계정이 설정되어 있지 않습니다.")
+    if not (secrets.compare_digest(username, ADMIN_USERNAME) and secrets.compare_digest(password, ADMIN_PASSWORD)):
+        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+
+    token = create_session_token(ADMIN_USERNAME)
+    response = JSONResponse(content={"status": "success"})
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
 @app.get("/")
 @app.get("/index.html")
 async def get_dashboard():
