@@ -251,6 +251,8 @@ FINANCIALJUICE_PREFIX_REPLACEMENTS = {
     r"Iran[’']s IRGC spokesman": "이란 혁명수비대 대변인",
     r"Yemen[’']s armed forces spokesperson": "예멘군 대변인",
     r"Iranian President": "이란 대통령",
+    r"Ukraine[’']s President": "우크라이나의 대통령",
+    r"Israel[’']s PM": "이스라엘의 총리",
 }
 
 # 대시('-') 오른쪽 언론사 표기에 특정 매체가 있으면, 맨 오른쪽에 설명을 덧붙인다.
