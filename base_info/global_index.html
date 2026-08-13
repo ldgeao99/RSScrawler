@@ -93,6 +93,17 @@
                 </div>
             </div>
 
+            <div class="mb-3 shrink-0 flex items-center gap-2">
+                <input type="text" id="filtered-search-input" placeholder="키워드 포착 뉴스 검색 (제목/매체명)"
+                       class="flex-1 min-w-0 bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-lg focus:outline-none focus:border-rose-500 text-slate-100 placeholder:text-slate-600">
+                <button type="button" id="filtered-search-button" aria-label="검색"
+                        class="shrink-0 bg-slate-800 hover:bg-rose-600 border border-slate-700 hover:border-rose-500 text-slate-300 hover:text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors">
+                    검색
+                </button>
+            </div>
+
+            <div id="filtered-search-empty" class="hidden text-slate-600 text-xs py-12 text-center shrink-0">검색 결과가 없습니다.</div>
+
             <div id="filtered-news-container" class="flex-1 overflow-y-auto space-y-3.5 pr-1.5">
                 <!-- 포착 기사 렌더링 -->
             </div>
@@ -270,6 +281,36 @@
             }
         }
 
+        // 🔍 [검색] 키워드 포착 뉴스 피드도 동일하게 서버(global_news_list_filtered.json 전체)에서 검색해온다.
+        let isFilteredSearchActive = false;
+
+        async function performFilteredSearch() {
+            const q = document.getElementById('filtered-search-input').value.trim();
+
+            if (!q) {
+                if (isFilteredSearchActive) {
+                    isFilteredSearchActive = false;
+                    document.getElementById('filtered-search-empty').classList.add('hidden');
+                    await loadInitialNews();
+                }
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/global-filtered-news/search?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                isFilteredSearchActive = true;
+
+                const container = document.getElementById('filtered-news-container');
+                container.innerHTML = data.news.map(item => createNewsCard(item, true)).join('');
+
+                document.getElementById('filtered-render-count').textContent = data.news.length;
+                document.getElementById('filtered-search-empty').classList.toggle('hidden', data.news.length > 0);
+            } catch (e) {
+                console.error("키워드 포착 뉴스 검색 실패:", e);
+            }
+        }
+
         function shouldRenderItem(item) {
             if (!filterSource) return true;
             return item.source === filterSource || item.source.includes(`(${filterSource})`);
@@ -365,30 +406,33 @@
                     document.getElementById('stream-render-count').textContent = streamContainer.querySelectorAll('.news-entry').length;
                 }
 
-                const filteredRes = await fetch('/api/global-filtered-news?offset=0');
-                const filteredData = await filteredRes.json();
-                document.getElementById('filtered-count').textContent = filteredData.total_count;
+                // 🔍 검색 중에는 실시간 유입으로 검색 결과가 덮어써지지 않도록 갱신을 건너뛴다.
+                if (!isFilteredSearchActive) {
+                    const filteredRes = await fetch('/api/global-filtered-news?offset=0');
+                    const filteredData = await filteredRes.json();
+                    document.getElementById('filtered-count').textContent = filteredData.total_count;
 
-                const filteredContainer = document.getElementById('filtered-news-container');
-                [...filteredData.news].reverse().forEach(item => {
-                    if (renderedFilteredLinks.has(item.link)) return;
-                    renderedFilteredLinks.add(item.link);
+                    const filteredContainer = document.getElementById('filtered-news-container');
+                    [...filteredData.news].reverse().forEach(item => {
+                        if (renderedFilteredLinks.has(item.link)) return;
+                        renderedFilteredLinks.add(item.link);
 
-                    if (shouldRenderItem(item)) {
-                        const card = createNewsCard(item, true);
-                        const temp = document.createElement('div');
-                        temp.innerHTML = card;
-                        if (filteredContainer.firstChild && filteredContainer.querySelector('.news-entry')) {
-                            filteredContainer.insertBefore(temp.firstElementChild, filteredContainer.firstChild);
-                        } else {
-                            filteredContainer.innerHTML = "";
-                            filteredContainer.appendChild(temp.firstElementChild);
+                        if (shouldRenderItem(item)) {
+                            const card = createNewsCard(item, true);
+                            const temp = document.createElement('div');
+                            temp.innerHTML = card;
+                            if (filteredContainer.firstChild && filteredContainer.querySelector('.news-entry')) {
+                                filteredContainer.insertBefore(temp.firstElementChild, filteredContainer.firstChild);
+                            } else {
+                                filteredContainer.innerHTML = "";
+                                filteredContainer.appendChild(temp.firstElementChild);
+                            }
+                            anyNew = true;
+                            filteredOffset++;
                         }
-                        anyNew = true;
-                        filteredOffset++;
-                    }
-                });
-                document.getElementById('filtered-render-count').textContent = filteredContainer.querySelectorAll('.news-entry').length;
+                    });
+                    document.getElementById('filtered-render-count').textContent = filteredContainer.querySelectorAll('.news-entry').length;
+                }
 
                 if (anyNew) triggerTimeUpdateFlash(false);
 
@@ -400,7 +444,7 @@
         // 🟢 [신규 기능]: 스크롤 하단 도달 시 과거 데이터를 불러와 아래에 붙이는 무한 스크롤 엔진
         async function loadMorePastNews(isFilteredBox = false) {
             if (isFilteredBox) {
-                if (isFilteredLoading) return;
+                if (isFilteredLoading || isFilteredSearchActive) return; // 검색 결과 표시 중엔 무한 스크롤 비활성
                 isFilteredLoading = true;
                 try {
                     const res = await fetch(`/api/global-filtered-news?offset=${filteredOffset}`);
@@ -460,6 +504,12 @@
             document.getElementById('stream-search-button').addEventListener('click', performStreamSearch);
             streamSearchInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') performStreamSearch();
+            });
+
+            const filteredSearchInput = document.getElementById('filtered-search-input');
+            document.getElementById('filtered-search-button').addEventListener('click', performFilteredSearch);
+            filteredSearchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') performFilteredSearch();
             });
 
             // 좌측 키워드 박스 스크롤 감시

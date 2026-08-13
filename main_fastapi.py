@@ -1094,6 +1094,19 @@ def get_filtered_news(offset: int = 0):
     return _get_safe_memory_data(current_data, offset)
 
 
+@app.get("/api/filtered-news/search")
+def search_filtered_news(q: str = ""):
+    """키워드 포착 뉴스 피드 검색. news_list_filtered.json 전체(최근 2일 보관분)를 훑는다."""
+    query = q.strip().lower()
+    if not query:
+        return {"total_count": 0, "news": []}
+
+    with db_lock: current_data = list(cached_filtered)
+    matched = [item for item in current_data
+               if query in item.get("title", "").lower() or query in item.get("source", "").lower()]
+    return _get_safe_memory_data(matched, offset=0)
+
+
 @app.get("/api/blacklisted-news")
 def get_blacklisted_news(offset: int = 0):
     with db_lock: current_data = list(cached_blacklisted)
@@ -1123,6 +1136,19 @@ def search_global_realtime_news(q: str = ""):
 def get_global_filtered_news(offset: int = 0):
     with db_lock: current_data = list(cached_global_filtered)
     return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/global-filtered-news/search")
+def search_global_filtered_news(q: str = ""):
+    """해외 키워드 포착 뉴스 피드 검색. global_news_list_filtered.json 전체(최근 2일 보관분)를 훑는다."""
+    query = q.strip().lower()
+    if not query:
+        return {"total_count": 0, "news": []}
+
+    with db_lock: current_data = list(cached_global_filtered)
+    matched = [item for item in current_data
+               if query in item.get("title", "").lower() or query in item.get("source", "").lower()]
+    return _get_safe_memory_data(matched, offset=0)
 
 
 @app.get("/api/global-blacklisted-news")
