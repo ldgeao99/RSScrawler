@@ -118,6 +118,17 @@
                 </div>
             </div>
 
+            <div class="mb-3 shrink-0 flex items-center gap-2">
+                <input type="text" id="stream-search-input" placeholder="실시간 뉴스 검색 (제목/매체명)"
+                       class="flex-1 min-w-0 bg-slate-950 border border-slate-800 text-xs px-3 py-2 rounded-lg focus:outline-none focus:border-blue-500 text-slate-100 placeholder:text-slate-600">
+                <button type="button" id="stream-search-button" aria-label="검색"
+                        class="shrink-0 bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 text-slate-300 hover:text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors">
+                    검색
+                </button>
+            </div>
+
+            <div id="stream-search-empty" class="hidden text-slate-600 text-xs py-12 text-center shrink-0">검색 결과가 없습니다.</div>
+
             <div id="stream-news-container" class="flex-1 overflow-y-auto space-y-3 pr-1.5">
                 <!-- 전체 기사 렌더링 -->
             </div>
@@ -227,6 +238,38 @@
             }
         }
 
+        // 🔍 [검색] 화면에 로드된 카드가 아니라, 서버가 메모리에 들고 있는 global_news_list_stream.json
+        // 전체(최근 2일 보관분)를 대상으로 /api/global-realtime-news/search를 호출해 결과를 받아온다.
+        // 검색 중에는 실시간 폴링/무한스크롤이 검색 결과를 덮어쓰지 않도록 잠시 멈춘다.
+        let isStreamSearchActive = false;
+
+        async function performStreamSearch() {
+            const q = document.getElementById('stream-search-input').value.trim();
+
+            if (!q) {
+                if (isStreamSearchActive) {
+                    isStreamSearchActive = false;
+                    document.getElementById('stream-search-empty').classList.add('hidden');
+                    await loadInitialNews();
+                }
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/global-realtime-news/search?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                isStreamSearchActive = true;
+
+                const container = document.getElementById('stream-news-container');
+                container.innerHTML = data.news.map(item => createNewsCard(item, false)).join('');
+
+                document.getElementById('stream-render-count').textContent = data.news.length;
+                document.getElementById('stream-search-empty').classList.toggle('hidden', data.news.length > 0);
+            } catch (e) {
+                console.error("실시간 뉴스 검색 실패:", e);
+            }
+        }
+
         function shouldRenderItem(item) {
             if (!filterSource) return true;
             return item.source === filterSource || item.source.includes(`(${filterSource})`);
@@ -290,33 +333,37 @@
         // 🚀 실시간 상단 유입 로직 (기존 2초 폴링 유지, 상단 최신뉴스 추가용)
         async function updateLiveNews() {
             try {
-                // 상단 유입은 항상 가장 최신판(offset=0) 상자에서 새로 들어온 기사만 체크합니다.
-                const streamRes = await fetch('/api/global-realtime-news?offset=0');
-                const streamData = await streamRes.json();
-                document.getElementById('stream-count').textContent = streamData.total_count;
-
-                const streamContainer = document.getElementById('stream-news-container');
                 let anyNew = false;
 
-                [...streamData.news].reverse().forEach(item => {
-                    if (renderedStreamLinks.has(item.link)) return;
-                    renderedStreamLinks.add(item.link);
+                // 🔍 검색 중에는 실시간 유입으로 검색 결과가 덮어써지지 않도록 스트림 갱신을 건너뛴다.
+                if (!isStreamSearchActive) {
+                    // 상단 유입은 항상 가장 최신판(offset=0) 상자에서 새로 들어온 기사만 체크합니다.
+                    const streamRes = await fetch('/api/global-realtime-news?offset=0');
+                    const streamData = await streamRes.json();
+                    document.getElementById('stream-count').textContent = streamData.total_count;
 
-                    if (shouldRenderItem(item)) {
-                        const card = createNewsCard(item, false);
-                        const temp = document.createElement('div');
-                        temp.innerHTML = card;
-                        if (streamContainer.firstChild && streamContainer.querySelector('.news-entry')) {
-                            streamContainer.insertBefore(temp.firstElementChild, streamContainer.firstChild);
-                        } else {
-                            streamContainer.innerHTML = "";
-                            streamContainer.appendChild(temp.firstElementChild);
+                    const streamContainer = document.getElementById('stream-news-container');
+
+                    [...streamData.news].reverse().forEach(item => {
+                        if (renderedStreamLinks.has(item.link)) return;
+                        renderedStreamLinks.add(item.link);
+
+                        if (shouldRenderItem(item)) {
+                            const card = createNewsCard(item, false);
+                            const temp = document.createElement('div');
+                            temp.innerHTML = card;
+                            if (streamContainer.firstChild && streamContainer.querySelector('.news-entry')) {
+                                streamContainer.insertBefore(temp.firstElementChild, streamContainer.firstChild);
+                            } else {
+                                streamContainer.innerHTML = "";
+                                streamContainer.appendChild(temp.firstElementChild);
+                            }
+                            anyNew = true;
+                            streamOffset++; // 상단 유입 시 전체 카운트 증가
                         }
-                        anyNew = true;
-                        streamOffset++; // 상단 유입 시 전체 카운트 증가
-                    }
-                });
-                document.getElementById('stream-render-count').textContent = streamContainer.querySelectorAll('.news-entry').length;
+                    });
+                    document.getElementById('stream-render-count').textContent = streamContainer.querySelectorAll('.news-entry').length;
+                }
 
                 const filteredRes = await fetch('/api/global-filtered-news?offset=0');
                 const filteredData = await filteredRes.json();
@@ -377,7 +424,7 @@
                 } catch (e) { console.error("과거 키워드 뉴스 로드 실패:", e); }
                 isFilteredLoading = false;
             } else {
-                if (isStreamLoading) return;
+                if (isStreamLoading || isStreamSearchActive) return; // 검색 결과 표시 중엔 무한 스크롤 비활성
                 isStreamLoading = true;
                 try {
                     const res = await fetch(`/api/global-realtime-news?offset=${streamOffset}`);
@@ -407,6 +454,13 @@
         window.addEventListener('DOMContentLoaded', async () => {
             await loadInitialNews();
             setInterval(updateLiveNews, 2000);
+
+            // 🔍 검색 버튼 클릭 또는 엔터로 서버 검색 실행
+            const streamSearchInput = document.getElementById('stream-search-input');
+            document.getElementById('stream-search-button').addEventListener('click', performStreamSearch);
+            streamSearchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') performStreamSearch();
+            });
 
             // 좌측 키워드 박스 스크롤 감시
             document.getElementById('filtered-news-container').addEventListener('scroll', function() {
