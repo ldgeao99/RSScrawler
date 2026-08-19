@@ -204,13 +204,19 @@
             }
         }
 
-        function createNewsCard(item, isFilteredBox = false) {
+        function createNewsCard(item, isFilteredBox = false, searchQuery = '') {
             // 🟢 [수정]: JavaScript Date 객체를 거치지 않고, 백엔드가 제공한 한국 시간 문자열(item.time)을 그대로 매핑합니다.
             const timeFormatted = item.time;
 
             let titleHtml = item.title;
 
-            if (combinedKeywordRegex) {
+            // 🔍 검색 결과일 때는 등록 키워드(노란색) 대신 검색어 일치 부분을 연두색으로 강조한다.
+            if (searchQuery) {
+                const escaped = searchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const searchRegex = new RegExp(`(${escaped})`, 'gi');
+                titleHtml = titleHtml.replace(searchRegex,
+                    (matched) => `<span class="bg-lime-400/20 text-lime-400 px-1 py-0.5 rounded border border-lime-400/30 font-bold">${matched}</span>`);
+            } else if (combinedKeywordRegex) {
                 titleHtml = titleHtml.replace(combinedKeywordRegex,
                     (matched) => `<span class="bg-amber-400/10 text-amber-400 px-1 py-0.5 rounded border border-amber-400/20 font-bold">${matched}</span>`);
             }
@@ -272,7 +278,7 @@
                 isStreamSearchActive = true;
 
                 const container = document.getElementById('stream-news-container');
-                container.innerHTML = data.news.map(item => createNewsCard(item, false)).join('');
+                container.innerHTML = data.news.map(item => createNewsCard(item, false, q)).join('');
 
                 document.getElementById('stream-render-count').textContent = data.news.length;
                 document.getElementById('stream-search-empty').classList.toggle('hidden', data.news.length > 0);
@@ -302,7 +308,7 @@
                 isFilteredSearchActive = true;
 
                 const container = document.getElementById('filtered-news-container');
-                container.innerHTML = data.news.map(item => createNewsCard(item, true)).join('');
+                container.innerHTML = data.news.map(item => createNewsCard(item, true, q)).join('');
 
                 document.getElementById('filtered-render-count').textContent = data.news.length;
                 document.getElementById('filtered-search-empty').classList.toggle('hidden', data.news.length > 0);

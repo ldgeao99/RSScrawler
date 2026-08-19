@@ -1077,14 +1077,13 @@ def get_all_news(offset: int = 0):
 @app.get("/api/realtime-news/search")
 def search_realtime_news(q: str = ""):
     """실시간 전체 뉴스 피드 검색. 화면에 로드된 카드가 아니라 메모리에 적재된
-    news_list_stream.json 전체(최근 2일 보관분)를 제목/매체명 기준으로 훑는다."""
+    news_list_stream.json 전체(최근 2일 보관분)를 제목 기준으로 훑는다."""
     query = q.strip().lower()
     if not query:
         return {"total_count": 0, "news": []}
 
     with db_lock: current_data = list(cached_stream)
-    matched = [item for item in current_data
-               if query in item.get("title", "").lower() or query in item.get("source", "").lower()]
+    matched = [item for item in current_data if query in item.get("title", "").lower()]
     return _get_safe_memory_data(matched, offset=0)
 
 
@@ -1102,8 +1101,7 @@ def search_filtered_news(q: str = ""):
         return {"total_count": 0, "news": []}
 
     with db_lock: current_data = list(cached_filtered)
-    matched = [item for item in current_data
-               if query in item.get("title", "").lower() or query in item.get("source", "").lower()]
+    matched = [item for item in current_data if query in item.get("title", "").lower()]
     return _get_safe_memory_data(matched, offset=0)
 
 
@@ -1127,8 +1125,7 @@ def search_global_realtime_news(q: str = ""):
         return {"total_count": 0, "news": []}
 
     with db_lock: current_data = list(cached_global_stream)
-    matched = [item for item in current_data
-               if query in item.get("title", "").lower() or query in item.get("source", "").lower()]
+    matched = [item for item in current_data if query in item.get("title", "").lower()]
     return _get_safe_memory_data(matched, offset=0)
 
 
@@ -1146,8 +1143,7 @@ def search_global_filtered_news(q: str = ""):
         return {"total_count": 0, "news": []}
 
     with db_lock: current_data = list(cached_global_filtered)
-    matched = [item for item in current_data
-               if query in item.get("title", "").lower() or query in item.get("source", "").lower()]
+    matched = [item for item in current_data if query in item.get("title", "").lower()]
     return _get_safe_memory_data(matched, offset=0)
 
 
