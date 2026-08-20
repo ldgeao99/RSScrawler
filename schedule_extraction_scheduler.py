@@ -90,14 +90,18 @@ class ScheduleSchema(BaseModel):
 
 
 DATE_FULL_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+DATE_QUARTER_RE = re.compile(r"^(\d{4})-Q([1-4])$")
 DATE_YEAR_MONTH_RE = re.compile(r"^(\d{4})-(\d{2})$")
 DATE_YEAR_ONLY_RE = re.compile(r"^(\d{4})$")
+
+QUARTER_START_MONTH = {"1": "01", "2": "04", "3": "07", "4": "10"}
 
 
 def normalize_schedule_date(event_title: str, exact_date: str) -> tuple:
     """
     모델이 형식 규칙을 놓쳤을 때를 대비한 방어적 정규화.
     - 'YYYY-MM-DD' (+ 요일 텍스트 제거)는 그대로 통과
+    - 'YYYY-QN'(분기까지만 아는 경우) -> event_title에 '[N분기 미정]' 접두, exact_date는 해당 분기 시작월의 'YYYY-MM-01'
     - 'YYYY-MM'(월만 아는 경우) -> event_title에 '[MM월 미정]' 접두, exact_date는 'YYYY-MM-01'
     - 'YYYY'(연도만 아는 경우) -> event_title에 '[YYYY년 미정]' 접두, exact_date는 'YYYY-01-01'
     """
@@ -108,6 +112,11 @@ def normalize_schedule_date(event_title: str, exact_date: str) -> tuple:
 
     if DATE_FULL_RE.match(raw):
         return event_title, raw
+
+    m = DATE_QUARTER_RE.match(raw)
+    if m:
+        year, quarter = m.groups()
+        return f"[{quarter}분기 미정] {event_title}", f"{year}-{QUARTER_START_MONTH[quarter]}-01"
 
     m = DATE_YEAR_MONTH_RE.match(raw)
     if m:
@@ -406,6 +415,8 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
         "exact_date 형식 규칙 (요일 표기 절대 금지):\n"
         "1) 구체적인 날짜(연/월/일)를 알 때 -> 'YYYY-MM-DD'\n"
         "2) 월까지만 알거나 특정 월 범위로만 언급될 때 -> 'YYYY-MM' (일자는 쓰지 마라)\n"
+        "2b) '1분기'/'2분기'/'3분기'/'4분기'처럼 분기까지만 언급될 때 -> 'YYYY-Q1'~'YYYY-Q4' 형식으로 출력해라 "
+        "(특정 월로 단정하지 말고 분기 그대로 표기).\n"
         "3) 연도만 알 때 -> 'YYYY' (월/일은 쓰지 마라)\n"
         f"{n_year_rule}"
     )
