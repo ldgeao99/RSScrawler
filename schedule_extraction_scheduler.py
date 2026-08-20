@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from google import genai
+from google.cloud import firestore
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
 
@@ -39,16 +40,22 @@ def get_yesterday_file_paths():
 
 # ==========================================================
 # 🔥 Firebase(Firestore) 연동 설정
-# - firestore.rules가 'allow read, write: if true'로 완전 공개돼 있어
-#   (FirebaseStockCalendar/public/index.html의 클라이언트 SDK 쓰기와 동일한 방식)
-#   서비스 계정 키 없이 REST API로 직접 쓴다.
+# - firestore.rules가 관리자 로그인(구글 인증)한 요청만 쓰기를 허용하도록 강화됐음.
+#   Admin SDK는 서비스 계정 키로 인증하며 보안 규칙을 우회하므로(관리자 권한과 동급),
+#   StockScheduleCrawler가 쓰는 것과 동일한 서비스 계정 키로 정식 인증해서 쓴다.
 # ==========================================================
 FIREBASE_PROJECT_ID = "stockcalender-13042"
 TEMP_EVENTS_COLLECTION = "temp_events"
-FIRESTORE_BASE_URL = (
-    f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}"
-    f"/databases/(default)/documents/{TEMP_EVENTS_COLLECTION}"
-)
+FIREBASE_KEY_PATH = "stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json"
+
+if os.path.exists(FIREBASE_KEY_PATH):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = FIREBASE_KEY_PATH
+    _firestore_db = firestore.Client(project=FIREBASE_PROJECT_ID)
+else:
+    logging.getLogger("news_logger").warning(
+        f"⚠️ [경고] 파이어베이스 인증 파일({FIREBASE_KEY_PATH})을 찾을 수 없습니다. Firestore 업로드가 스킵됩니다."
+    )
+    _firestore_db = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("news_logger")
@@ -125,19 +132,18 @@ def _make_temp_event_doc_id(event_name: str, date_str: str) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
 
 
-def _to_firestore_value(value):
-    if isinstance(value, bool):
-        return {"booleanValue": value}
-    return {"stringValue": value or ""}
-
-
 def push_schedules_to_firestore(schedule_results: list):
     """
     events 컬렉션과 동일한 필드 구성(date, category, isImportant, eventName, detail,
     relatedStocks, url)으로 매핑해 temp_events 컬렉션에 upsert한다.
     (events가 아니라 temp_events에 넣어 검수 후 수동으로 events에 반영하는 스테이징 컬렉션으로 사용)
     """
+    if _firestore_db is None:
+        logger.warning("⚠️ Firestore 인증이 안 돼 있어 업로드를 건너뜁니다.")
+        return
+
     success, failed, skipped = 0, 0, 0
+    collection_ref = _firestore_db.collection(TEMP_EVENTS_COLLECTION)
 
     for news in schedule_results:
         event_name = news.get("extracted_event") or news.get("title", "")
@@ -149,31 +155,25 @@ def push_schedules_to_firestore(schedule_results: list):
 
         doc_id = _make_temp_event_doc_id(event_name, date_str)
         payload = {
-            "fields": {
-                "date": _to_firestore_value(date_str),
-                "category": _to_firestore_value("일반"),
-                "isImportant": _to_firestore_value(False),
-                "eventName": _to_firestore_value(event_name),
-                "title": _to_firestore_value(news.get("title", "")),
-                "detail": _to_firestore_value(news.get("details", "")),
-                "relatedStocks": _to_firestore_value(news.get("relatedStocks", "")),
-                "url": _to_firestore_value(news.get("link", "")),
-                # events의 'date'(일정 발생일)와는 별개로, 이 일정이 언제 수집(등록)됐는지를 남겨
-                # temp_events 검수 화면에서 등록일 순으로 정렬/구분할 수 있게 한다.
-                "articleDate": _to_firestore_value(news.get("time_kst", "")),
-            }
+            "date": date_str,
+            "category": "일반",
+            "isImportant": False,
+            "eventName": event_name,
+            "title": news.get("title", ""),
+            "detail": news.get("details", ""),
+            "relatedStocks": news.get("relatedStocks", ""),
+            "url": news.get("link", ""),
+            # events의 'date'(일정 발생일)와는 별개로, 이 일정이 언제 수집(등록)됐는지를 남겨
+            # temp_events 검수 화면에서 등록일 순으로 정렬/구분할 수 있게 한다.
+            "articleDate": news.get("time_kst", ""),
         }
 
         try:
-            resp = requests.patch(f"{FIRESTORE_BASE_URL}/{doc_id}", json=payload, timeout=10)
-            if resp.status_code == 200:
-                success += 1
-            else:
-                failed += 1
-                logger.warning(f"⚠️ Firestore 저장 실패 ({resp.status_code}): {event_name[:30]} - {resp.text[:150]}")
+            collection_ref.document(doc_id).set(payload, merge=True)
+            success += 1
         except Exception as e:
             failed += 1
-            logger.warning(f"⚠️ Firestore 요청 에러 ({event_name[:30]}): {e}")
+            logger.warning(f"⚠️ Firestore 저장 실패: {event_name[:30]} - {e}")
 
     logger.info(
         f"🔥 [Firestore 업로드] '{TEMP_EVENTS_COLLECTION}' 컬렉션 반영 완료: "
