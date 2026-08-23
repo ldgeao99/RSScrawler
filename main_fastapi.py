@@ -110,7 +110,7 @@ SENTIMENT_EMOJI = {
 # 사실상 같은 뉴스라 텔레그램에 계속 알림이 오면 피로가 누적된다. 최근 몇 시간 안에 이미
 # 텔레그램으로 보낸 제목과 유사도가 높으면 이번 건은 알림만 건너뛴다(필터링 목록에는 그대로 쌓임).
 TELEGRAM_DEDUP_WINDOW_SECONDS = 3 * 60 * 60  # 3시간
-TELEGRAM_DEDUP_SIMILARITY_THRESHOLD = 60     # rapidfuzz token_sort_ratio(0~100). 실측 백테스트로 보정한 값(오탐 없이 억제율 극대화)
+TELEGRAM_DEDUP_SIMILARITY_THRESHOLD = 55     # rapidfuzz token_sort_ratio(0~100). 실측 백테스트로 보정한 값(오탐 없이 억제율 극대화)
 
 
 def filter_telegram_duplicates(items, recent_titles):
