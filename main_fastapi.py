@@ -1274,6 +1274,20 @@ def get_global_filtered_news_stats():
     return _compute_filtered_news_stats("global_news_list_filtered", snapshot)
 
 
+# 📊 [전체 뉴스 통계] 키워드 포착과 무관한 '수집된 전체 스트림' 기준 일별/요일별 집계.
+# 위 filtered 통계와 동일한 로직을, 백업 파일 접두어와 라이브 캐시만 stream용으로 바꿔 재사용한다.
+@app.get("/api/realtime-news/stats")
+def get_stream_news_stats():
+    with db_lock: snapshot = list(cached_stream)
+    return _compute_filtered_news_stats("news_list_stream", snapshot)
+
+
+@app.get("/api/global-realtime-news/stats")
+def get_global_stream_news_stats():
+    with db_lock: snapshot = list(cached_global_stream)
+    return _compute_filtered_news_stats("global_news_list_stream", snapshot)
+
+
 @app.get("/api/blacklisted-news")
 def get_blacklisted_news(offset: int = 0):
     with db_lock: current_data = list(cached_blacklisted)

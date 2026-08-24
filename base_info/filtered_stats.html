@@ -31,22 +31,34 @@
 
     <main class="flex-1 w-full max-w-6xl mx-auto px-4 py-8 space-y-6">
 
-        <!-- 탭 전환 -->
+        <!-- 지역 탭 전환 (국내/해외) -->
         <div class="flex items-center gap-2">
-            <button id="tab-domestic" onclick="switchTab('domestic')"
+            <button id="tab-domestic" onclick="switchRegion('domestic')"
                     class="px-4 py-2 rounded-lg text-sm font-bold transition-colors bg-blue-600 text-white">
                 🇰🇷 국내
             </button>
-            <button id="tab-global" onclick="switchTab('global')"
+            <button id="tab-global" onclick="switchRegion('global')"
                     class="px-4 py-2 rounded-lg text-sm font-bold transition-colors bg-slate-800 text-slate-400 hover:bg-slate-700">
                 🌐 해외
+            </button>
+        </div>
+
+        <!-- 종류 탭 전환 (포착 뉴스 / 전체 뉴스) -->
+        <div class="flex items-center gap-2">
+            <button id="tab-filtered" onclick="switchKind('filtered')"
+                    class="px-4 py-2 rounded-lg text-sm font-bold transition-colors bg-rose-600 text-white">
+                🔥 포착 뉴스
+            </button>
+            <button id="tab-stream" onclick="switchKind('stream')"
+                    class="px-4 py-2 rounded-lg text-sm font-bold transition-colors bg-slate-800 text-slate-400 hover:bg-slate-700">
+                ⚡ 전체 뉴스
             </button>
         </div>
 
         <!-- 요일별 통계 -->
         <section class="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-xl">
             <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-5 flex items-center gap-1.5">
-                <span>📅</span> 요일별 평균 포착 건수
+                <span>📅</span> <span id="weekday-title">요일별 평균 포착 건수</span>
             </h2>
             <div id="weekday-chart" class="space-y-3"></div>
         </section>
@@ -55,7 +67,7 @@
         <section class="bg-slate-900 border border-slate-800/80 rounded-2xl p-6 shadow-xl">
             <div class="flex items-center justify-between mb-5">
                 <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <span>📈</span> 일별 포착 건수
+                    <span>📈</span> <span id="daily-title">일별 포착 건수</span>
                 </h2>
                 <span class="text-[11px] text-slate-500">💡 news_back_up 폴더의 저장된 파일을 그대로 읽어 건수만 집계합니다 (오늘은 실시간 캐시 기준).</span>
             </div>
@@ -71,20 +83,38 @@
     </footer>
 
     <script>
-        let currentTab = 'domestic';
+        let currentRegion = 'domestic';  // domestic | global
+        let currentKind = 'filtered';    // filtered | stream
         const statsCache = {};
 
+        // 지역 × 종류 = 4가지 엔드포인트
         const ENDPOINTS = {
-            domestic: '/api/filtered-news/stats',
-            global: '/api/global-filtered-news/stats',
+            'domestic:filtered': '/api/filtered-news/stats',
+            'global:filtered':   '/api/global-filtered-news/stats',
+            'domestic:stream':   '/api/realtime-news/stats',
+            'global:stream':     '/api/global-realtime-news/stats',
         };
 
-        function switchTab(tab) {
-            currentTab = tab;
+        function updateTabStyles() {
             document.getElementById('tab-domestic').className =
-                `px-4 py-2 rounded-lg text-sm font-bold transition-colors ${tab === 'domestic' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
+                `px-4 py-2 rounded-lg text-sm font-bold transition-colors ${currentRegion === 'domestic' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
             document.getElementById('tab-global').className =
-                `px-4 py-2 rounded-lg text-sm font-bold transition-colors ${tab === 'global' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
+                `px-4 py-2 rounded-lg text-sm font-bold transition-colors ${currentRegion === 'global' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
+            document.getElementById('tab-filtered').className =
+                `px-4 py-2 rounded-lg text-sm font-bold transition-colors ${currentKind === 'filtered' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
+            document.getElementById('tab-stream').className =
+                `px-4 py-2 rounded-lg text-sm font-bold transition-colors ${currentKind === 'stream' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`;
+        }
+
+        function switchRegion(region) {
+            currentRegion = region;
+            updateTabStyles();
+            render();
+        }
+
+        function switchKind(kind) {
+            currentKind = kind;
+            updateTabStyles();
             render();
         }
 
@@ -141,17 +171,24 @@
             });
         }
 
-        async function loadStats(tab) {
-            if (statsCache[tab]) return statsCache[tab];
-            const res = await fetch(ENDPOINTS[tab]);
+        async function loadStats(key) {
+            if (statsCache[key]) return statsCache[key];
+            const res = await fetch(ENDPOINTS[key]);
             const data = await res.json();
-            statsCache[tab] = data;
+            statsCache[key] = data;
             return data;
+        }
+
+        function updateKindLabels() {
+            const kindLabel = currentKind === 'filtered' ? '포착' : '전체';
+            document.getElementById('weekday-title').textContent = `요일별 평균 ${kindLabel} 건수`;
+            document.getElementById('daily-title').textContent = `일별 ${kindLabel} 건수`;
         }
 
         async function render() {
             try {
-                const data = await loadStats(currentTab);
+                updateKindLabels();
+                const data = await loadStats(`${currentRegion}:${currentKind}`);
                 renderWeekday(data.weekday || []);
                 renderDaily(data.daily || []);
             } catch (e) {
