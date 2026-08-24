@@ -238,6 +238,40 @@ _translation_stats = {
 }
 _translation_recent = deque(maxlen=20)
 
+# 🩺 [구글 무료 엔드포인트 상시 헬스체크] 실제 뉴스 제목 번역과 무관하게, 10분마다 짧은 테스트
+# 문구를 구글 비공식 엔드포인트에 보내 지금 이 서버 IP가 차단(429) 상태인지 미리 확인해둔다.
+# DeepL이 정상일 때도 "구글 폴백을 지금 쓸 수 있는 상태인가"를 대시보드에서 바로 볼 수 있게 하려는 목적.
+_google_translate_health = {
+    "available": None,  # None = 아직 한 번도 확인 안 됨
+    "checked_at": None,
+    "error": None,
+}
+
+
+def _check_google_translate_endpoint():
+    response = requests.get(
+        "https://translate.googleapis.com/translate_a/single",
+        params={"client": "gtx", "sl": "en", "tl": "ko", "dt": "t", "q": "test"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+async def google_translate_health_check_loop():
+    while True:
+        now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            # curl_cffi의 동기 requests 호출이라 이벤트 루프를 막지 않도록 스레드로 넘긴다.
+            await asyncio.to_thread(_check_google_translate_endpoint)
+            _google_translate_health["available"] = True
+            _google_translate_health["error"] = None
+        except Exception as e:
+            _google_translate_health["available"] = False
+            _google_translate_health["error"] = str(e)
+        _google_translate_health["checked_at"] = now_str
+        await asyncio.sleep(600)  # 10분마다 재확인
+
 
 def _record_translation_event(ok: bool, original: str, translated: str = "", error: str = ""):
     now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
@@ -1251,6 +1285,11 @@ def get_translation_status():
         "last_failure_at": _translation_stats["last_failure_at"],
         "last_failure_reason": _translation_stats["last_failure_reason"],
         "recent": list(_translation_recent),
+        "google_fallback": {
+            "available": _google_translate_health["available"],
+            "checked_at": _google_translate_health["checked_at"],
+            "error": _google_translate_health["error"],
+        },
     }
 
 
@@ -1714,6 +1753,10 @@ if __name__ == "__main__":
             )
         )
         logger.info("⚡ [엔진 직결] Uvicorn 루프에 기업명 동기화 스케줄러 비동기 태스크 등록을 완료했습니다.")
+
+        # 🩺 구글 번역 무료 엔드포인트 상시 헬스체크 등록 (10분 주기)
+        asyncio.create_task(google_translate_health_check_loop())
+        logger.info("⚡ [엔진 직결] Uvicorn 루프에 구글 번역 헬스체크 비동기 태스크 등록을 완료했습니다.")
 
     server.startup = custom_startup
 

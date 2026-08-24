@@ -63,6 +63,10 @@
                         <span class="font-black text-slate-200">제목 번역 최근 내역</span>
                         <span id="translation-status-summary" class="text-[10px] text-slate-500 font-mono"></span>
                     </div>
+                    <div id="google-fallback-status" class="flex items-center justify-between mb-2 pb-2 border-b border-slate-800 text-[10px] text-slate-500">
+                        <span>구글 무료 엔드포인트(폴백)</span>
+                        <span id="google-fallback-text" class="font-mono">확인 전</span>
+                    </div>
                     <div id="translation-status-list" class="space-y-2 max-h-72 overflow-y-auto"></div>
                 </div>
             </div>
@@ -557,6 +561,19 @@
                 }
 
                 summary.textContent = `성공 ${data.success_count} / 실패 ${data.fail_count}`;
+
+                const fallbackText = document.getElementById('google-fallback-text');
+                const gf = data.google_fallback;
+                if (!gf || gf.available === null) {
+                    fallbackText.textContent = '확인 전';
+                    fallbackText.className = 'font-mono text-slate-500';
+                } else if (gf.available) {
+                    fallbackText.textContent = `사용 가능 (${gf.checked_at})`;
+                    fallbackText.className = 'font-mono text-emerald-400';
+                } else {
+                    fallbackText.textContent = `차단됨 (${gf.checked_at})`;
+                    fallbackText.className = 'font-mono text-rose-400';
+                }
 
                 if (data.recent.length === 0) {
                     list.innerHTML = '<div class="text-slate-600 text-center py-4">아직 번역 이력이 없습니다.</div>';
