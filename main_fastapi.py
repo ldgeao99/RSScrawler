@@ -10,6 +10,7 @@ import calendar  # ★ 시간대 보정을 위해 추가된 표준 라이브러�
 import random
 import secrets
 import threading
+from collections import deque
 import feedparser
 import email.utils  # ★ 모든 표준 타임존 규격을 완벽하게 파싱하기 위해 추가
 from datetime import datetime, timezone, timedelta  # ★ timezone, timedelta 누락 보완 완료
@@ -226,6 +227,35 @@ DEEPL_API_URL = (
 # 프로세스 메모리에 캐시해 API 호출/글자수 소모 자체를 줄인다. 재시작하면 초기화된다.
 _translation_cache: dict[str, str] = {}
 
+# 🩺 [번역 상태 모니터링] 사이트 대시보드에서 번역이 실제로 잘 되고 있는지 눈으로 확인할 수 있도록,
+# 최근 성공/실패 이력을 메모리에 남겨 /api/translation-status 로 노출한다.
+_translation_stats = {
+    "success_count": 0,
+    "fail_count": 0,
+    "last_success_at": None,
+    "last_failure_at": None,
+    "last_failure_reason": None,
+}
+_translation_recent = deque(maxlen=20)
+
+
+def _record_translation_event(ok: bool, original: str, translated: str = "", error: str = ""):
+    now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+    if ok:
+        _translation_stats["success_count"] += 1
+        _translation_stats["last_success_at"] = now_str
+    else:
+        _translation_stats["fail_count"] += 1
+        _translation_stats["last_failure_at"] = now_str
+        _translation_stats["last_failure_reason"] = error
+    _translation_recent.appendleft({
+        "ok": ok,
+        "original": original,
+        "translated": translated,
+        "error": error,
+        "time": now_str,
+    })
+
 
 def translate_title_to_korean(title: str) -> str:
     """영문 뉴스 제목을 DeepL로 한국어 번역한다. 키 미설정/실패 시 원문 제목을 그대로 반환한다."""
@@ -249,9 +279,11 @@ def translate_title_to_korean(title: str) -> str:
         translated = response.json()["translations"][0]["text"].strip()
         result = translated if translated else title
         _translation_cache[title] = result
+        _record_translation_event(True, title, translated=result)
         return result
     except Exception as e:
         logger.warning(f"⚠️ [제목 번역 실패] '{title[:40]}...' 번역 중 오류: {e}")
+        _record_translation_event(False, title, error=str(e))
         return title
 
 
@@ -1207,6 +1239,19 @@ def get_global_filtered_news_stats():
 def get_blacklisted_news(offset: int = 0):
     with db_lock: current_data = list(cached_blacklisted)
     return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/translation-status")
+def get_translation_status():
+    return {
+        "enabled": bool(DEEPL_API_KEY),
+        "success_count": _translation_stats["success_count"],
+        "fail_count": _translation_stats["fail_count"],
+        "last_success_at": _translation_stats["last_success_at"],
+        "last_failure_at": _translation_stats["last_failure_at"],
+        "last_failure_reason": _translation_stats["last_failure_reason"],
+        "recent": list(_translation_recent),
+    }
 
 
 @app.get("/api/global-realtime-news")

@@ -48,6 +48,24 @@
                 <span id="active-source-name" class="font-extrabold"></span> 전용 채널 관제 중
                 <a href="/global" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-black transition-colors">전체보기</a>
             </div>
+
+            <!-- 🌐 [번역 상태 모니터] 영문 피드(FinancialJuice 등) 제목 번역이 실제로 잘 되고 있는지
+                 사이트에서 바로 확인할 수 있도록 성공/실패 건수를 보여주는 배지. 클릭하면 최근 내역이 펼쳐진다. -->
+            <div class="relative ml-3">
+                <button id="translation-status-btn" type="button"
+                        class="hidden lg:flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 transition-colors">
+                    <span id="translation-status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
+                    <span id="translation-status-text">번역 상태 확인 중...</span>
+                </button>
+                <div id="translation-status-panel"
+                     class="hidden absolute left-0 mt-2 w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 p-3 text-xs">
+                    <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-800">
+                        <span class="font-black text-slate-200">제목 번역 최근 내역</span>
+                        <span id="translation-status-summary" class="text-[10px] text-slate-500 font-mono"></span>
+                    </div>
+                    <div id="translation-status-list" class="space-y-2 max-h-72 overflow-y-auto"></div>
+                </div>
+            </div>
         </div>
         <div class="flex items-center gap-2 lg:gap-3 shrink-0 overflow-x-auto lg:overflow-visible -mx-1 px-1 lg:mx-0 lg:px-0">
             <a href="/global-trash-view" target="_blank" class="bg-rose-950/40 hover:bg-rose-900 border border-rose-900/40 text-[10px] lg:text-xs text-rose-300 px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 whitespace-nowrap shrink-0">
@@ -503,10 +521,92 @@
             }
         }
 
+        // 🌐 [번역 상태 모니터] /api/translation-status를 폴링해 배지 색상/텍스트를 갱신하고,
+        // 클릭 시 최근 성공/실패 내역을 패널로 펼쳐 보여준다.
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function fetchTranslationStatus() {
+            const dot = document.getElementById('translation-status-dot');
+            const text = document.getElementById('translation-status-text');
+            const btn = document.getElementById('translation-status-btn');
+            const summary = document.getElementById('translation-status-summary');
+            const list = document.getElementById('translation-status-list');
+
+            try {
+                const res = await fetch('/api/translation-status');
+                const data = await res.json();
+                btn.classList.remove('hidden');
+                btn.classList.add('lg:flex');
+
+                if (!data.enabled) {
+                    dot.className = 'w-1.5 h-1.5 rounded-full bg-slate-600';
+                    text.textContent = '번역: 비활성(키 미설정)';
+                } else if (data.fail_count === 0 && data.success_count === 0) {
+                    dot.className = 'w-1.5 h-1.5 rounded-full bg-slate-600';
+                    text.textContent = '번역: 대기 중';
+                } else if (data.fail_count === 0) {
+                    dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500';
+                    text.textContent = `번역 정상 (성공 ${data.success_count}건)`;
+                } else {
+                    dot.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse';
+                    text.textContent = `번역 실패 있음 (실패 ${data.fail_count}건)`;
+                }
+
+                summary.textContent = `성공 ${data.success_count} / 실패 ${data.fail_count}`;
+
+                if (data.recent.length === 0) {
+                    list.innerHTML = '<div class="text-slate-600 text-center py-4">아직 번역 이력이 없습니다.</div>';
+                } else {
+                    list.innerHTML = data.recent.map(ev => {
+                        if (ev.ok) {
+                            return `
+                                <div class="bg-slate-800/60 border border-slate-800 rounded-lg p-2">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="text-emerald-400 font-bold">✅ 성공</span>
+                                        <span class="text-slate-500 font-mono text-[10px]">${ev.time}</span>
+                                    </div>
+                                    <div class="text-slate-500 line-through decoration-slate-700">${escapeHtml(ev.original)}</div>
+                                    <div class="text-slate-200">${escapeHtml(ev.translated)}</div>
+                                </div>`;
+                        }
+                        return `
+                            <div class="bg-rose-950/30 border border-rose-900/40 rounded-lg p-2">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-rose-400 font-bold">❌ 실패</span>
+                                    <span class="text-slate-500 font-mono text-[10px]">${ev.time}</span>
+                                </div>
+                                <div class="text-slate-300">${escapeHtml(ev.original)}</div>
+                                <div class="text-rose-400/80 text-[10px] mt-1 break-all">${escapeHtml(ev.error)}</div>
+                            </div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error('번역 상태 조회 실패:', e);
+            }
+        }
+
         // 🟢 개별 컨테이너 내부 스크롤 감지 이벤트 등록
         window.addEventListener('DOMContentLoaded', async () => {
             await loadInitialNews();
             setInterval(updateLiveNews, 2000);
+
+            await fetchTranslationStatus();
+            setInterval(fetchTranslationStatus, 30000);
+
+            const translationBtn = document.getElementById('translation-status-btn');
+            const translationPanel = document.getElementById('translation-status-panel');
+            translationBtn.addEventListener('click', () => {
+                translationPanel.classList.toggle('hidden');
+            });
+            document.addEventListener('click', (e) => {
+                if (!translationBtn.contains(e.target) && !translationPanel.contains(e.target)) {
+                    translationPanel.classList.add('hidden');
+                }
+            });
 
             // 🔍 검색 버튼 클릭 또는 엔터로 서버 검색 실행
             const streamSearchInput = document.getElementById('stream-search-input');
