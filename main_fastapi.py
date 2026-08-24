@@ -1165,7 +1165,7 @@ def _compute_filtered_news_stats(backup_filename_prefix: str, live_cache: list):
             "weekday": wd,
             "total": weekday_totals[wd],
             "days": weekday_day_counts[wd],
-            "average": round(weekday_totals[wd] / weekday_day_counts[wd], 1) if weekday_day_counts[wd] else 0,
+            "average": round(weekday_totals[wd] / weekday_day_counts[wd]) if weekday_day_counts[wd] else 0,
         }
         for wd in WEEKDAY_NAMES_KR
     ]

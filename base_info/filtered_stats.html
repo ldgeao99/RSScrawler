@@ -100,9 +100,11 @@
             row.className = 'flex items-center gap-3';
             row.innerHTML = `
                 <span class="w-28 shrink-0 text-xs text-slate-400 font-semibold truncate" title="${label}">${label}</span>
-                <div class="flex-1 h-5 bg-slate-800/60 rounded overflow-hidden">
+                <span class="flex-1"></span>
+                <div class="w-32 shrink-0 h-5 bg-slate-800/60 rounded overflow-hidden">
                     <div class="h-full ${colorClass} rounded transition-all duration-300" style="width: ${pct}%;"></div>
                 </div>
+                <span class="flex-1"></span>
                 <span class="w-24 shrink-0 text-xs text-slate-300 font-mono font-bold text-right">${sublabel}</span>
             `;
             container.appendChild(row);
