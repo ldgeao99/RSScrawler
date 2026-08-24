@@ -28,6 +28,7 @@ import back_up_scheduler
 import global_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
+import batch_logger
 
 from fastapi import FastAPI, Body, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -1116,6 +1117,13 @@ async def get_rss_settings():
 @app.get("/batch-dashboard")
 async def get_batch_dashboard():
     return FileResponse("base_info/batch_dashboard.html")
+
+
+@app.get("/api/batch-logs")
+def get_batch_logs():
+    # 대시보드가 Firestore를 직접 읽으면 보안 규칙(인증 필요)에 막히므로, 서버가 Admin SDK로
+    # 대신 읽어 정규화된 리스트로 내려준다.
+    return {"batches": batch_logger.get_batch_logs()}
 
 
 @app.get("/filtered-stats")

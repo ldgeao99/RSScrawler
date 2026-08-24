@@ -46,35 +46,16 @@
     </footer>
 
     <script>
-        const FIREBASE_PROJECT_ID = "stockcalender-13042";
-        const BATCH_LOGS_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/batch_logs`;
+        // Firestore 보안 규칙이 강화되어 브라우저에서 직접 읽으면 403이 나므로, 서버가 Admin SDK로
+        // 대신 읽어 내려주는 /api/batch-logs를 조회한다.
+        const BATCH_LOGS_URL = "/api/batch-logs";
 
-        // 문서 ID -> 표시 순서/아이콘 (스케줄러 실행 순서 그대로: 백업 -> 일정추출 -> 기업명동기화)
+        // 문서 ID -> 아이콘 (정렬 순서는 서버가 이미 맞춰 내려줌)
         const BATCH_ORDER = {
-            "backup_cleanup": { order: 0, icon: "💾" },
-            "schedule_extraction": { order: 1, icon: "📅" },
-            "company_sync": { order: 2, icon: "🏢" },
+            "backup_cleanup": { icon: "💾" },
+            "schedule_extraction": { icon: "📅" },
+            "company_sync": { icon: "🏢" },
         };
-
-        function parseFirestoreDoc(doc) {
-            const fields = doc.fields || {};
-            const get = (key) => {
-                const f = fields[key];
-                if (!f) return "";
-                if ("stringValue" in f) return f.stringValue;
-                if ("booleanValue" in f) return f.booleanValue;
-                return "";
-            };
-            const docId = doc.name.split('/').pop();
-            return {
-                id: docId,
-                batchName: get("batchName") || docId,
-                lastRunAt: get("lastRunAt") || "",
-                nextRunAt: get("nextRunAt") || "",
-                success: get("success") === true,
-                message: get("message") || "",
-            };
-        }
 
         function formatRelative(target) {
             if (!target) return "";
@@ -130,14 +111,7 @@
             try {
                 const res = await fetch(BATCH_LOGS_URL);
                 const data = await res.json();
-                const docs = (data.documents || []).map(parseFirestoreDoc);
-
-                // 알려진 3개 배치를 정해진 순서로, 나머지는 뒤에 이름순으로 붙인다.
-                docs.sort((a, b) => {
-                    const oa = BATCH_ORDER[a.id] ? BATCH_ORDER[a.id].order : 99;
-                    const ob = BATCH_ORDER[b.id] ? BATCH_ORDER[b.id].order : 99;
-                    return oa - ob;
-                });
+                const docs = data.batches || [];
 
                 if (docs.length === 0) {
                     container.innerHTML = `<div class="text-slate-600 text-xs py-16 text-center col-span-3">아직 기록된 배치 실행 이력이 없습니다. 다음 새벽 배치 실행 이후 표시됩니다.</div>`;
