@@ -215,26 +215,55 @@ def send_telegram_notification(items, is_global=False):
 # 도메인에 이 문자열이 포함되면 제목을 한글로 번역한다. 영문 전용 해외 피드가 늘어나면 여기에 추가.
 ENGLISH_TITLE_TRANSLATE_DOMAINS = ["financialjuice.com"]
 
+# 구글 비공식 엔드포인트가 "자동화된 쿼리"로 판단해 429를 뱉지 않도록, 실제 API를 호출할 때만
+# 최소 간격을 두고 429 발생 시 짧게 재시도한다. (같은 제목이 반복되는 경우는 아래 캐시로 API 호출 자체를 생략)
+_TRANSLATE_MIN_INTERVAL_SEC = 0.6
+_last_translate_call_time = 0.0
+
+# 동일 제목(예: 매 주기 반복되는 "120-Day Correlation Matrix" 류)을 다시 번역기에 물어보지 않도록
+# 프로세스 메모리에 캐시한다. 재시작하면 초기화되지만, 한 실행 주기 내 폭주를 막는 게 목적이라 충분하다.
+_translation_cache: dict[str, str] = {}
+
 
 def translate_title_to_korean(title: str) -> str:
     """영문 뉴스 제목을 한국어로 번역한다. 실패 시 원문 제목을 그대로 반환한다."""
+    global _last_translate_call_time
+
     if not title.strip():
         return title
 
-    try:
-        response = requests.get(
-            "https://translate.googleapis.com/translate_a/single",
-            params={"client": "gtx", "sl": "en", "tl": "ko", "dt": "t", "q": title},
-            timeout=8,
-        )
-        response.raise_for_status()
-        data = response.json()
-        translated = "".join(segment[0] for segment in data[0] if segment and segment[0])
-        translated = translated.strip()
-        return translated if translated else title
-    except Exception as e:
-        logger.warning(f"⚠️ [제목 번역 실패] '{title[:40]}...' 번역 중 오류: {e}")
-        return title
+    if title in _translation_cache:
+        return _translation_cache[title]
+
+    for attempt in range(3):
+        wait = _TRANSLATE_MIN_INTERVAL_SEC - (time.time() - _last_translate_call_time)
+        if wait > 0:
+            time.sleep(wait)
+
+        try:
+            _last_translate_call_time = time.time()
+            response = requests.get(
+                "https://translate.googleapis.com/translate_a/single",
+                params={"client": "gtx", "sl": "en", "tl": "ko", "dt": "t", "q": title},
+                timeout=8,
+            )
+            response.raise_for_status()
+            data = response.json()
+            translated = "".join(segment[0] for segment in data[0] if segment and segment[0])
+            translated = translated.strip()
+            result = translated if translated else title
+            _translation_cache[title] = result
+            return result
+        except Exception as e:
+            is_rate_limited = "429" in str(e)
+            if is_rate_limited and attempt < 2:
+                # 레이트리밋에 걸렸을 때만 잠깐 더 쉬었다가 재시도. 그 외 에러는 바로 포기.
+                time.sleep(2 * (attempt + 1))
+                continue
+            logger.warning(f"⚠️ [제목 번역 실패] '{title[:40]}...' 번역 중 오류: {e}")
+            return title
+
+    return title
 
 
 def should_translate_title(url: str) -> bool:
