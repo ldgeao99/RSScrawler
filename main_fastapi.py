@@ -209,19 +209,17 @@ def send_telegram_notification(items, is_global=False):
 
 # ====================================================
 # 🌐 [해외] 영문 피드(FinancialJuice 등) 제목 한글 번역
-# 구글 번역 비공식 엔드포인트가 IP 레이트리밋(429)으로 계속 막혀서 DeepL 공식 무료 API로 전환.
-# (월 500,000자 무료. DEEPL_API_KEY가 .env에 없으면 번역을 건너뛰고 원문을 그대로 사용한다.)
+# 구글 비공식 엔드포인트(429 차단)/DeepL(일회성 크레딧) 문제를 피해 Azure Translator로 전환.
+# (F0 무료 티어: 월 200만 자, 매달 리셋, 영구 무료. 한도 초과 시 429/403만 반환하고 다음 달 리셋
+#  되므로 의도치 않은 과금 위험이 없다. 키가 .env에 없으면 번역을 건너뛰고 원문을 그대로 사용한다.)
 # ====================================================
 # 도메인에 이 문자열이 포함되면 제목을 한글로 번역한다. 영문 전용 해외 피드가 늘어나면 여기에 추가.
 ENGLISH_TITLE_TRANSLATE_DOMAINS = ["financialjuice.com"]
 
-DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY", "")
-# 무료 플랜 키는 ":fx" 접미사가 붙어 있고, 무료/유료 플랜이 엔드포인트 도메인 자체가 다르다.
-DEEPL_API_URL = (
-    "https://api-free.deepl.com/v2/translate"
-    if DEEPL_API_KEY.endswith(":fx")
-    else "https://api.deepl.com/v2/translate"
-)
+AZURE_TRANSLATOR_KEY = os.environ.get("AZURE_TRANSLATOR_KEY", "")
+# 리소스를 특정 지역(예: koreacentral)으로 만들면 이 지역 헤더가 필수. 전역(Global) 리소스면 비워둬도 됨.
+AZURE_TRANSLATOR_REGION = os.environ.get("AZURE_TRANSLATOR_REGION", "")
+AZURE_TRANSLATOR_URL = "https://api.cognitive.microsofttranslator.com/translate"
 
 # 동일 제목(예: 매 주기 반복되는 "120-Day Correlation Matrix" 류)을 다시 번역기에 물어보지 않도록
 # 프로세스 메모리에 캐시해 API 호출/글자수 소모 자체를 줄인다. 재시작하면 초기화된다.
@@ -292,25 +290,33 @@ def _record_translation_event(ok: bool, original: str, translated: str = "", err
 
 
 def translate_title_to_korean(title: str) -> str:
-    """영문 뉴스 제목을 DeepL로 한국어 번역한다. 키 미설정/실패 시 원문 제목을 그대로 반환한다."""
+    """영문 뉴스 제목을 Azure Translator로 한국어 번역한다. 키 미설정/실패 시 원문 제목을 그대로 반환한다."""
     if not title.strip():
         return title
 
-    if not DEEPL_API_KEY:
+    if not AZURE_TRANSLATOR_KEY:
         return title
 
     if title in _translation_cache:
         return _translation_cache[title]
 
+    headers = {
+        "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    if AZURE_TRANSLATOR_REGION:
+        headers["Ocp-Apim-Subscription-Region"] = AZURE_TRANSLATOR_REGION
+
     try:
         response = requests.post(
-            DEEPL_API_URL,
-            headers={"Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}"},
-            data={"text": title, "source_lang": "EN", "target_lang": "KO"},
+            AZURE_TRANSLATOR_URL,
+            params={"api-version": "3.0", "from": "en", "to": "ko"},
+            headers=headers,
+            json=[{"Text": title}],
             timeout=8,
         )
         response.raise_for_status()
-        translated = response.json()["translations"][0]["text"].strip()
+        translated = response.json()[0]["translations"][0]["text"].strip()
         result = translated if translated else title
         _translation_cache[title] = result
         _record_translation_event(True, title, translated=result)
@@ -1278,7 +1284,7 @@ def get_blacklisted_news(offset: int = 0):
 @app.get("/api/translation-status")
 def get_translation_status():
     return {
-        "enabled": bool(DEEPL_API_KEY),
+        "enabled": bool(AZURE_TRANSLATOR_KEY),
         "success_count": _translation_stats["success_count"],
         "fail_count": _translation_stats["fail_count"],
         "last_success_at": _translation_stats["last_success_at"],
