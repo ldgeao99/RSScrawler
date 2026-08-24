@@ -324,6 +324,8 @@ GLOBAL_FILTERED_NEWS_FILE = "global_news_list_filtered.json"
 GLOBAL_STREAM_NEWS_FILE = "global_news_list_stream.json"
 GLOBAL_BLACKLISTED_NEWS_FILE = "global_news_list_blacklisted.json"
 
+BACKUP_DIR_NAME = "news_back_up"  # back_up_scheduler.py / global_back_up_scheduler.py 와 동일한 백업 폴더
+
 DEFAULT_CATEGORIZED_KEYWORDS = {
     "etc": ["속보", "트럼프", "이란", "단독", "특징주", "계약", "대통령", "美", "젠슨황", "중", "北"],
     "sector": ["반도체", "조선"],
@@ -1027,6 +1029,11 @@ async def get_batch_dashboard():
     return FileResponse("base_info/batch_dashboard.html")
 
 
+@app.get("/filtered-stats")
+async def get_filtered_stats_page():
+    return FileResponse("base_info/filtered_stats.html")
+
+
 # 🌐 [해외 뉴스] 국내 화면과 완전히 분리된 별도 페이지 세트
 @app.get("/global")
 @app.get("/global-index.html")
@@ -1103,6 +1110,79 @@ def search_filtered_news(q: str = ""):
     with db_lock: current_data = list(cached_filtered)
     matched = [item for item in current_data if query in item.get("title", "").lower()]
     return _get_safe_memory_data(matched, offset=0)
+
+
+WEEKDAY_NAMES_KR = ["월", "화", "수", "목", "금", "토", "일"]
+BACKUP_FILENAME_RE_TEMPLATE = r"{prefix}_backup_(\d{{6}})\.json"
+
+
+def _compute_filtered_news_stats(backup_filename_prefix: str, live_cache: list):
+    """
+    news_back_up/ 폴더에 이미 저장되어 있는 일별 백업 파일들을 읽어 건수만 세고,
+    아직 백업되지 않은 오늘 하루치는 메모리 캐시(=라이브 디스크 파일의 미러)에서 센다.
+    새로 뉴스를 수집하거나 재가공하지 않고, 이미 파일에 저장된 데이터만 카운트한다.
+    """
+    daily_counts = {}
+
+    filename_re = re.compile(BACKUP_FILENAME_RE_TEMPLATE.format(prefix=re.escape(backup_filename_prefix)))
+    if os.path.isdir(BACKUP_DIR_NAME):
+        for fname in os.listdir(BACKUP_DIR_NAME):
+            m = filename_re.fullmatch(fname)
+            if not m:
+                continue
+            date_str = m.group(1)  # YYMMDD
+            try:
+                full_date = f"20{date_str[0:2]}-{date_str[2:4]}-{date_str[4:6]}"
+                datetime.strptime(full_date, "%Y-%m-%d")  # 날짜 형식 검증
+            except ValueError:
+                continue
+            try:
+                with open(os.path.join(BACKUP_DIR_NAME, fname), "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    data = json.loads(content) if content else []
+                daily_counts[full_date] = len(data)
+            except Exception:
+                continue
+
+    # 아직 자정 백업 전(오늘)이라 파일이 없는 당일분은 메모리 캐시에서 직접 센다.
+    kst_tz = timezone(timedelta(hours=9))
+    today_str = datetime.now(kst_tz).strftime("%Y-%m-%d")
+    with db_lock:
+        today_count = sum(1 for item in live_cache if (item.get("time_kst") or "").startswith(today_str))
+    if today_count:
+        daily_counts[today_str] = today_count
+
+    weekday_totals = {name: 0 for name in WEEKDAY_NAMES_KR}
+    weekday_day_counts = {name: 0 for name in WEEKDAY_NAMES_KR}
+    for date_str, count in daily_counts.items():
+        wd = WEEKDAY_NAMES_KR[datetime.strptime(date_str, "%Y-%m-%d").weekday()]
+        weekday_totals[wd] += count
+        weekday_day_counts[wd] += 1
+
+    daily = [{"date": d, "count": c} for d, c in sorted(daily_counts.items())]
+    weekday = [
+        {
+            "weekday": wd,
+            "total": weekday_totals[wd],
+            "days": weekday_day_counts[wd],
+            "average": round(weekday_totals[wd] / weekday_day_counts[wd], 1) if weekday_day_counts[wd] else 0,
+        }
+        for wd in WEEKDAY_NAMES_KR
+    ]
+
+    return {"daily": daily, "weekday": weekday}
+
+
+@app.get("/api/filtered-news/stats")
+def get_filtered_news_stats():
+    with db_lock: snapshot = list(cached_filtered)
+    return _compute_filtered_news_stats("news_list_filtered", snapshot)
+
+
+@app.get("/api/global-filtered-news/stats")
+def get_global_filtered_news_stats():
+    with db_lock: snapshot = list(cached_global_filtered)
+    return _compute_filtered_news_stats("global_news_list_filtered", snapshot)
 
 
 @app.get("/api/blacklisted-news")
