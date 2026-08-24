@@ -50,11 +50,23 @@
         // 대신 읽어 내려주는 /api/batch-logs를 조회한다.
         const BATCH_LOGS_URL = "/api/batch-logs";
 
-        // 문서 ID -> 아이콘 (정렬 순서는 서버가 이미 맞춰 내려줌)
+        // 문서 ID -> 아이콘 + 하는 일 개요 (정렬 순서는 서버가 이미 맞춰 내려줌)
         const BATCH_ORDER = {
-            "backup_cleanup": { icon: "💾" },
-            "schedule_extraction": { icon: "📅" },
-            "company_sync": { icon: "🏢" },
+            "backup_cleanup": {
+                icon: "💾",
+                schedule: "매일 00:00 KST",
+                desc: "어제 수집분(전체·포착·격리 뉴스)을 news_back_up 폴더에 날짜별 파일로 분리 백업하고, 라이브 파일을 비운 뒤 메모리에서 오늘·어제가 아닌 과거 기사를 정리합니다.",
+            },
+            "schedule_extraction": {
+                icon: "📅",
+                schedule: "매일 00:15 KST",
+                desc: "어제 포착 뉴스를 대상으로 3단계 파이프라인(중복 제거 → OpenAI 제목 선별 → Gemini 본문에서 일정 정밀 추출)을 돌려 향후 일정을 뽑아 Firestore(temp_events)에 올립니다.",
+            },
+            "company_sync": {
+                icon: "🏢",
+                schedule: "매일 01:00 KST",
+                desc: "KRX(코스피+코스닥) 상장 종목명을 조회해, 아직 없는 신규 상장 기업명을 company_kr 키워드 목록에 자동으로 추가합니다.",
+            },
         };
 
         function formatRelative(target) {
@@ -76,6 +88,16 @@
             const meta = BATCH_ORDER[item.id] || { icon: "📦" };
             const nextRunDate = item.nextRunAt ? new Date(item.nextRunAt.replace(" ", "T") + "+09:00") : null;
 
+            const overviewBlock = meta.desc
+                ? `<div class="bg-slate-950/60 border border-slate-800/60 rounded-lg p-2.5">
+                        <div class="flex items-center gap-1.5 mb-1">
+                            <span class="text-[10px] text-slate-500">📋 하는 일</span>
+                            ${meta.schedule ? `<span class="text-[10px] text-amber-400/80 font-mono">· ${meta.schedule}</span>` : ""}
+                        </div>
+                        <p class="text-[11px] text-slate-400 leading-relaxed break-words">${meta.desc}</p>
+                   </div>`
+                : "";
+
             return `
                 <div class="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 shadow-xl flex flex-col gap-3">
                     <div class="flex items-center justify-between">
@@ -85,6 +107,7 @@
                         </div>
                         ${statusBadge}
                     </div>
+                    ${overviewBlock}
                     <div class="space-y-1.5 text-xs">
                         <div class="flex justify-between text-slate-400">
                             <span>마지막 구동시간</span>
