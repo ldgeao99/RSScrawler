@@ -192,11 +192,11 @@
 
     </div>
 
-    <!-- 제외 키워드 설정 박스 -->
+    <!-- 제외 키워드 설정 박스 (영구) -->
     <div class="bg-slate-900 border border-slate-850 p-6 rounded-2xl shadow-xl space-y-4">
         <div>
             <h3 class="text-xs font-black text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
-                <span>⛔</span> 감시 제외 단어 등록 (차단 키워드)
+                <span>⛔</span> 감시 제외 단어 등록 (영구 차단 키워드)
             </h3>
             <p class="text-[10px] text-slate-500 mt-0.5">※ 여기에 지정된 소음 제거용 어구가 제목에 포착되면 알림 대상에서 강력 차단 제어됩니다.</p>
         </div>
@@ -211,6 +211,26 @@
         </div>
         <div id="blacklist-tags" class="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1"></div>
     </div>
+
+    <!-- 제외 키워드 설정 박스 (임시) -->
+    <div class="bg-slate-900 border border-slate-850 p-6 rounded-2xl shadow-xl space-y-4">
+        <div>
+            <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span>🕒</span> 감시 제외 단어 등록 (임시 차단 키워드)
+            </h3>
+            <p class="text-[10px] text-slate-500 mt-0.5">※ 영구 차단과 동일하게 동작합니다. 네팔 대홍수처럼 한시적인 이벤트 키워드를 넣어두고, 상황이 끝나면 직접 삭제하세요. (자동 만료 없음)</p>
+        </div>
+        <div class="flex gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+            <input type="text" id="new-temp-blacklist-input" placeholder="한시적으로 제외할 단어 입력..."
+                   class="flex-1 bg-slate-900 border border-slate-700 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:border-amber-500 text-slate-100 placeholder:text-slate-600"
+                   onkeypress="if(event.key === 'Enter') addTempBlacklist()">
+            <button onclick="addTempBlacklist()"
+                    class="bg-amber-600 hover:bg-amber-500 text-[11px] text-white px-3 py-1.5 rounded-md font-bold transition-colors shrink-0">
+                추가
+            </button>
+        </div>
+        <div id="temp-blacklist-tags" class="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1"></div>
+    </div>
 </main>
 
 <footer class="bg-slate-900 border-t border-slate-800 px-8 py-3.5 text-xs text-slate-500 flex justify-between items-center shrink-0">
@@ -224,6 +244,7 @@
 <script>
         let categorizedKeywords = { etc: [], sector: [], company_kr: [], global_company: [], brokerage: [], performance: [], positive: [], negative: [] };
         let blacklist = [];
+        let tempBlacklist = [];
 
         // 카테고리별 한글 명칭 매핑 오프젝트
         const categoryNames = {
@@ -534,11 +555,140 @@
             }
         }
 
+        // ======================================================
+        // 🕒 [임시 차단 키워드] 영구 차단과 동일한 로직을, temp 전용 상태/DOM/엔드포인트로 복제.
+        // ======================================================
+        async function loadTempBlacklist() {
+            try {
+                const res = await fetch('/api/global-blacklist-temp');
+                tempBlacklist = await res.json();
+                renderTempBlacklistTags();
+            } catch (err) {
+                console.error("임시 제외 키워드 로드 실패:", err);
+            }
+        }
+
+        let renderedTempBlacklistCount = RENDER_BATCH_SIZE;
+
+        function renderTempBlacklistTags() {
+            renderedTempBlacklistCount = Math.min(RENDER_BATCH_SIZE, tempBlacklist.length);
+            renderTempBlacklistBatch();
+        }
+
+        function renderTempBlacklistBatch() {
+            const container = document.getElementById('temp-blacklist-tags');
+            container.innerHTML = '';
+
+            if (tempBlacklist.length === 0) {
+                container.innerHTML = '<span class="text-slate-600 text-[10px] py-1">등록된 임시 제외 단어가 없습니다.</span>';
+                return;
+            }
+
+            const count = renderedTempBlacklistCount || Math.min(RENDER_BATCH_SIZE, tempBlacklist.length);
+            for (let index = 0; index < count; index++) {
+                const bl = tempBlacklist[index];
+                const tag = document.createElement('span');
+                tag.className = "inline-flex items-center gap-1 bg-amber-950/30 text-amber-300 text-[11px] px-2.5 py-1 rounded border border-amber-900/50 font-semibold";
+                tag.innerHTML = `
+                    <span>${bl}</span>
+                    <button onclick="deleteTempBlacklist(${index})" class="text-amber-400 hover:text-amber-200 font-bold ml-1 text-xs">&times;</button>
+                `;
+                container.appendChild(tag);
+            }
+
+            if (count < tempBlacklist.length) {
+                const moreTag = document.createElement('span');
+                moreTag.className = 'text-slate-600 text-[10px] py-1 w-full text-center';
+                moreTag.textContent = `⏳ 스크롤하면 더 불러옵니다 (${count}/${tempBlacklist.length})`;
+                container.appendChild(moreTag);
+            }
+        }
+
+        function setupTempBlacklistInfiniteScroll() {
+            const container = document.getElementById('temp-blacklist-tags');
+            if (!container) return;
+            container.addEventListener('scroll', () => {
+                if (container.scrollTop + container.clientHeight >= container.scrollHeight - 20) {
+                    if (renderedTempBlacklistCount < tempBlacklist.length) {
+                        renderedTempBlacklistCount = Math.min(renderedTempBlacklistCount + RENDER_BATCH_SIZE, tempBlacklist.length);
+                        renderTempBlacklistBatch();
+                    }
+                }
+            });
+        }
+
+        async function addTempBlacklist() {
+            const input = document.getElementById('new-temp-blacklist-input');
+            const bl = input.value.trim();
+
+            if (!bl) {
+                alert("한시적으로 제외할 단어를 입력해 주세요.");
+                return;
+            }
+
+            if (!validateKeywordInput(bl)) return;
+
+            if (tempBlacklist.includes(bl)) {
+                alert("이미 등록된 임시 제외 단어입니다.");
+                return;
+            }
+
+            const updatedList = [bl, ...tempBlacklist];
+            const isSuccess = await updateTempBlacklistBackend(updatedList);
+
+            if (isSuccess) {
+                tempBlacklist.unshift(bl);
+                renderedTempBlacklistCount = Math.min(renderedTempBlacklistCount + 1, tempBlacklist.length);
+                input.value = '';
+                renderTempBlacklistBatch();
+                alert("🎉 임시 제외 단어가 성공적으로 등록되었습니다!");
+            }
+        }
+
+        async function deleteTempBlacklist(index) {
+            const targetBl = tempBlacklist[index];
+
+            if (!confirm(`임시 제외 단어 '${targetBl}' 를 정말 삭제하시겠습니까?`)) return;
+
+            const updatedList = [...tempBlacklist];
+            updatedList.splice(index, 1);
+
+            const isSuccess = await updateTempBlacklistBackend(updatedList);
+
+            if (isSuccess) {
+                tempBlacklist.splice(index, 1);
+                renderTempBlacklistTags();
+                alert(`🗑️ 임시 제외 단어 '${targetBl}' 가 성공적으로 삭제되었습니다.`);
+            }
+        }
+
+        async function updateTempBlacklistBackend(dataToSend) {
+            try {
+                const response = await fetch('/api/global-blacklist-temp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToSend)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 상태 코드: ${response.status}`);
+                }
+
+                return true;
+            } catch (err) {
+                console.error("임시 제외 단어 저장 실패:", err);
+                alert(`❌ 저장에 실패했습니다.\n사유: ${err.message}`);
+                return false;
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', async () => {
             await loadKeywords();
             await loadBlacklist();
+            await loadTempBlacklist();
             setupCategoryInfiniteScroll();
             setupBlacklistInfiniteScroll();
+            setupTempBlacklistInfiniteScroll();
         });
 </script>
 </body>

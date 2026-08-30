@@ -8,9 +8,11 @@ kiwoom_api/
 
 # 서버에서 직접 큐레이션되는 운영 데이터 (git으로 관리하면 배포 시 서버 최신본을 덮어씀 - 추적 제외)
 base_info/keyword_list_exclude.json
+base_info/keyword_list_exclude_temp.json
 base_info/keyword_list_include.json
 base_info/rss_list.json
 base_info/global_keyword_list_exclude.json
+base_info/global_keyword_list_exclude_temp.json
 base_info/global_keyword_list_include.json
 base_info/global_rss_list.json
 

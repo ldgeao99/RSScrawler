@@ -402,6 +402,9 @@ def translate_financialjuice_title(title: str) -> str:
 RSS_DB_FILE = "base_info/rss_list.json"
 KEYWORD_DB_FILE = "base_info/keyword_list_include.json"
 BLACKLIST_DB_FILE = "base_info/keyword_list_exclude.json"
+# 🕒 [임시 차단] 영구 차단(위)과 동일하게 동작하지만, 네팔 대홍수 같은 한시적 이벤트 키워드를
+# 따로 모아 수동으로 관리/삭제하려고 분리한 별도 목록. 자동 만료 없음.
+TEMP_BLACKLIST_DB_FILE = "base_info/keyword_list_exclude_temp.json"
 FILTERED_NEWS_FILE = "news_list_filtered.json"
 STREAM_NEWS_FILE = "news_list_stream.json"
 BLACKLISTED_NEWS_FILE = "news_list_blacklisted.json"
@@ -410,6 +413,7 @@ BLACKLISTED_NEWS_FILE = "news_list_blacklisted.json"
 GLOBAL_RSS_DB_FILE = "base_info/global_rss_list.json"
 GLOBAL_KEYWORD_DB_FILE = "base_info/global_keyword_list_include.json"
 GLOBAL_BLACKLIST_DB_FILE = "base_info/global_keyword_list_exclude.json"
+GLOBAL_TEMP_BLACKLIST_DB_FILE = "base_info/global_keyword_list_exclude_temp.json"
 GLOBAL_FILTERED_NEWS_FILE = "global_news_list_filtered.json"
 GLOBAL_STREAM_NEWS_FILE = "global_news_list_stream.json"
 GLOBAL_BLACKLISTED_NEWS_FILE = "global_news_list_blacklisted.json"
@@ -609,6 +613,7 @@ cached_blacklist = load_blacklist()
 cached_rss = load_rss()
 
 # ★ 이제 파이썬이 이 변수들을 메모리에 정상적으로 등록했습니다.
+cached_temp_blacklist = load_blacklist(TEMP_BLACKLIST_DB_FILE, [])
 cached_stream = []
 cached_filtered = []
 cached_blacklisted = []
@@ -618,6 +623,7 @@ rss_response_status = {}
 # 🌐 [해외 뉴스] 국내 파이프라인과 동일한 락(db_lock)을 공유하되, 완전히 별도의 캐시/키워드/RSS 목록을 사용
 cached_global_keywords = load_keywords(GLOBAL_KEYWORD_DB_FILE, DEFAULT_GLOBAL_CATEGORIZED_KEYWORDS)
 cached_global_blacklist = load_blacklist(GLOBAL_BLACKLIST_DB_FILE, DEFAULT_GLOBAL_BLACKLIST)
+cached_global_temp_blacklist = load_blacklist(GLOBAL_TEMP_BLACKLIST_DB_FILE, [])
 cached_global_rss = load_rss(GLOBAL_RSS_DB_FILE, DEFAULT_GLOBAL_RSS_CHANNELS)
 
 cached_global_stream = []
@@ -729,6 +735,7 @@ def rss_monitor_thread(
     blacklisted_file,
     label="",
     is_global=False,
+    cached_temp_blacklist_ref=None,
 ):
     print(f"📢 {label}RSS 실시간 백그라운드 관제 엔진이 가동되었습니다.")
 
@@ -778,7 +785,10 @@ def rss_monitor_thread(
 
                 target_channels = [dict(ch) for ch in cached_rss_ref]
                 categorized_kw = dict(cached_keywords_ref)
+                # 영구 차단 + 임시 차단을 합쳐서 동일하게 제외 필터로 적용한다.
                 current_blacklist = list(cached_blacklist_ref)
+                if cached_temp_blacklist_ref:
+                    current_blacklist += list(cached_temp_blacklist_ref)
 
             flat_keywords = set()
             for key in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance", "positive", "negative"]:
@@ -1379,6 +1389,12 @@ async def get_blacklist():
     with db_lock: return cached_blacklist
 
 
+@app.get("/api/blacklist-temp")
+async def get_temp_blacklist():
+    global cached_temp_blacklist
+    with db_lock: return cached_temp_blacklist
+
+
 @app.get("/api/global-keywords")
 async def get_global_keywords(mode: str = "flat"):
     global cached_global_keywords
@@ -1394,6 +1410,12 @@ async def get_global_keywords(mode: str = "flat"):
 async def get_global_blacklist():
     global cached_global_blacklist
     with db_lock: return cached_global_blacklist
+
+
+@app.get("/api/global-blacklist-temp")
+async def get_global_temp_blacklist():
+    global cached_global_temp_blacklist
+    with db_lock: return cached_global_temp_blacklist
 
 
 @app.get("/api/rss")
@@ -1612,6 +1634,23 @@ async def post_blacklist(updated_blacklist: list = Body(...)):
     return {"status": "success"}
 
 
+@app.post("/api/blacklist-temp")
+async def post_temp_blacklist(updated_blacklist: list = Body(...)):
+    global cached_temp_blacklist
+    with db_lock:
+        old_set = {kw.strip() for kw in cached_temp_blacklist if kw.strip()}
+        new_set = {kw.strip() for kw in updated_blacklist if kw.strip()}
+        newly_added = list(new_set - old_set)
+
+        cached_temp_blacklist.clear()
+        cached_temp_blacklist.extend(updated_blacklist)
+        save_blacklist(cached_temp_blacklist, TEMP_BLACKLIST_DB_FILE)
+
+        _relocate_newly_blacklisted(newly_added, cached_stream, cached_filtered, cached_blacklisted,
+                                     STREAM_NEWS_FILE, FILTERED_NEWS_FILE, BLACKLISTED_NEWS_FILE)
+    return {"status": "success"}
+
+
 @app.post("/api/global-blacklist")
 async def post_global_blacklist(updated_blacklist: list = Body(...)):
     global cached_global_blacklist
@@ -1623,6 +1662,23 @@ async def post_global_blacklist(updated_blacklist: list = Body(...)):
         cached_global_blacklist.clear()
         cached_global_blacklist.extend(updated_blacklist)
         save_blacklist(cached_global_blacklist, GLOBAL_BLACKLIST_DB_FILE)
+
+        _relocate_newly_blacklisted(newly_added, cached_global_stream, cached_global_filtered, cached_global_blacklisted,
+                                     GLOBAL_STREAM_NEWS_FILE, GLOBAL_FILTERED_NEWS_FILE, GLOBAL_BLACKLISTED_NEWS_FILE)
+    return {"status": "success"}
+
+
+@app.post("/api/global-blacklist-temp")
+async def post_global_temp_blacklist(updated_blacklist: list = Body(...)):
+    global cached_global_temp_blacklist
+    with db_lock:
+        old_set = {kw.strip() for kw in cached_global_temp_blacklist if kw.strip()}
+        new_set = {kw.strip() for kw in updated_blacklist if kw.strip()}
+        newly_added = list(new_set - old_set)
+
+        cached_global_temp_blacklist.clear()
+        cached_global_temp_blacklist.extend(updated_blacklist)
+        save_blacklist(cached_global_temp_blacklist, GLOBAL_TEMP_BLACKLIST_DB_FILE)
 
         _relocate_newly_blacklisted(newly_added, cached_global_stream, cached_global_filtered, cached_global_blacklisted,
                                      GLOBAL_STREAM_NEWS_FILE, GLOBAL_FILTERED_NEWS_FILE, GLOBAL_BLACKLISTED_NEWS_FILE)
@@ -1716,7 +1772,7 @@ if __name__ == "__main__":
         target=rss_monitor_thread,
         args=(cached_rss, cached_keywords, cached_blacklist, cached_stream, cached_filtered, cached_blacklisted,
               rss_response_status, STREAM_NEWS_FILE, FILTERED_NEWS_FILE, BLACKLISTED_NEWS_FILE, ""),
-        kwargs={"is_global": False},
+        kwargs={"is_global": False, "cached_temp_blacklist_ref": cached_temp_blacklist},
         daemon=True,
     )
     monitor.start()
@@ -1726,7 +1782,7 @@ if __name__ == "__main__":
         args=(cached_global_rss, cached_global_keywords, cached_global_blacklist, cached_global_stream,
               cached_global_filtered, cached_global_blacklisted, global_rss_response_status,
               GLOBAL_STREAM_NEWS_FILE, GLOBAL_FILTERED_NEWS_FILE, GLOBAL_BLACKLISTED_NEWS_FILE, "[해외] "),
-        kwargs={"is_global": True},
+        kwargs={"is_global": True, "cached_temp_blacklist_ref": cached_global_temp_blacklist},
         daemon=True,
     )
     global_monitor.start()
