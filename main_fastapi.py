@@ -427,6 +427,63 @@ def resolve_short_link(url: str) -> str:
     _link_resolution_cache[url] = result
     return result
 
+
+# ====================================================
+# 🔗 [구글 뉴스 링크 풀기] news.google.com/rss/articles/... 링크는 실제 언론사 URL이 인코딩되어 있어
+# 그냥 열면 구글 뉴스 중간 페이지를 거친다. 기사 페이지에서 서명(sg)·타임스탬프(ts)·기사ID를 뽑아
+# 구글 내부 batchexecute API를 호출하면 실제 언론사 URL을 얻을 수 있다. 실패 시 원본(구글 뉴스) 유지.
+# ====================================================
+GOOGLE_NEWS_HOST = "news.google.com"
+_gnews_resolution_cache = {}
+
+
+def resolve_google_news_link(url: str) -> str:
+    if not url or GOOGLE_NEWS_HOST not in url or "/articles/" not in url:
+        return url
+
+    if url in _gnews_resolution_cache:
+        return _gnews_resolution_cache[url]
+
+    result = url
+    try:
+        page = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        html_text = page.text
+        sg = re.search(r'data-n-a-sg="([^"]+)"', html_text)
+        ts = re.search(r'data-n-a-ts="([^"]+)"', html_text)
+        gid = re.search(r'data-n-a-id="([^"]+)"', html_text)
+
+        if sg and ts and gid:
+            inner = ["garturlreq",
+                     [["X", "X", ["X", "X"], None, None, 1, 1, "US:en", None, 1, None, None, None, None, None, 0, 1],
+                      "X", "X", 1, [1, 1, 1], 1, 1, None, 0, 0, None, 0],
+                     gid.group(1), int(ts.group(1)), sg.group(1)]
+            env = [[["Fbv4je", json.dumps(inner), None, "generic"]]]
+            payload = "f.req=" + urllib.parse.quote(json.dumps(env))
+
+            resp = requests.post(
+                "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+                data=payload,
+                headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                         "User-Agent": "Mozilla/5.0"},
+                timeout=8,
+            )
+            for chunk_line in resp.text.split("\n"):
+                if chunk_line.strip().startswith('[["wrb.fr"'):
+                    decoded = json.loads(json.loads(chunk_line)[0][2])[1]
+                    if decoded and decoded.startswith("http"):
+                        result = decoded
+                    break
+    except Exception as e:
+        logger.warning(f"⚠️ [구글뉴스 링크 해석 실패] '{url[:60]}...' : {e}")
+
+    _gnews_resolution_cache[url] = result
+    return result
+
+
+def resolve_link(url: str) -> str:
+    """단축 링크 → 최종 목적지, 그 결과가 구글 뉴스 링크면 실제 언론사 URL까지 한 번에 풀어 반환한다."""
+    return resolve_google_news_link(resolve_short_link(url))
+
 # ====================================================
 
 RSS_DB_FILE = "base_info/rss_list.json"
@@ -897,9 +954,10 @@ def rss_monitor_thread(
 
                     ch_entries = []
                     for entry in feed.entries:
-                        # 단축/프리뷰 링크(tinyurl 등)는 최종 목적지로 미리 풀어, 프리뷰 페이지를 거치지 않게 한다.
-                        # seen_links도 이 최종 URL 기준으로 관리되어 재수집 시 중복 판별이 정확히 맞는다.
-                        link = resolve_short_link(entry.get("link", ""))
+                        # 단축/프리뷰 링크(tinyurl)와 구글 뉴스 링크를 최종 언론사 URL로 미리 풀어,
+                        # 중간 페이지를 거치지 않게 한다. seen_links도 이 최종 URL 기준으로 관리되어
+                        # 재수집 시 중복 판별이 정확히 맞는다.
+                        link = resolve_link(entry.get("link", ""))
                         if link in seen_links: continue
                         title = re.sub(r'\s+-\s+한국경제$', '', entry.get("title", ""))
                         title = re.sub(r'^\s*FinancialJuice\s*:\s*', '', title, flags=re.IGNORECASE)
