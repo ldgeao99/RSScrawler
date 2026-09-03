@@ -398,6 +398,36 @@ def translate_financialjuice_title(title: str) -> str:
     return f"{prefix}{translated_body}{suffix}"
 
 # ====================================================
+# 🔗 [단축/프리뷰 링크 풀기] 일부 피드가 tinyurl 프리뷰 링크(tinyurl.com/preview/...)를 준다.
+# 이 링크를 그대로 열면 "원래 사이트로 이동" 버튼이 있는 중간 프리뷰 페이지가 떠서 번거롭다.
+# 수집 시점에 서버가 리다이렉트를 미리 따라가 최종 목적지 URL로 바꿔 저장하면, 사용자는 바로 원문으로 간다.
+# (대상 도메인만 처리해 불필요한 네트워크 요청을 막고, 한 번 푼 결과는 캐시해 재요청을 피한다. 실패 시 원본 유지.)
+# ====================================================
+SHORT_LINK_DOMAINS = ["tinyurl.com"]
+_link_resolution_cache = {}
+
+
+def resolve_short_link(url: str) -> str:
+    if not url or not any(domain in url for domain in SHORT_LINK_DOMAINS):
+        return url
+
+    if url in _link_resolution_cache:
+        return _link_resolution_cache[url]
+
+    result = url
+    try:
+        resp = requests.get(url, allow_redirects=True, timeout=8)
+        final = getattr(resp, "url", "") or url
+        # 리다이렉트가 여전히 단축 도메인 안에 머물면(=제대로 못 풀림) 원본을 유지한다.
+        if final and not any(domain in final for domain in SHORT_LINK_DOMAINS):
+            result = final
+    except Exception as e:
+        logger.warning(f"⚠️ [링크 해석 실패] '{url[:60]}...' : {e}")
+
+    _link_resolution_cache[url] = result
+    return result
+
+# ====================================================
 
 RSS_DB_FILE = "base_info/rss_list.json"
 KEYWORD_DB_FILE = "base_info/keyword_list_include.json"
@@ -867,7 +897,9 @@ def rss_monitor_thread(
 
                     ch_entries = []
                     for entry in feed.entries:
-                        link = entry.get("link", "")
+                        # 단축/프리뷰 링크(tinyurl 등)는 최종 목적지로 미리 풀어, 프리뷰 페이지를 거치지 않게 한다.
+                        # seen_links도 이 최종 URL 기준으로 관리되어 재수집 시 중복 판별이 정확히 맞는다.
+                        link = resolve_short_link(entry.get("link", ""))
                         if link in seen_links: continue
                         title = re.sub(r'\s+-\s+한국경제$', '', entry.get("title", ""))
                         title = re.sub(r'^\s*FinancialJuice\s*:\s*', '', title, flags=re.IGNORECASE)
