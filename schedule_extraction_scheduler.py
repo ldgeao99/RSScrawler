@@ -349,6 +349,41 @@ async def check_title_schedule_openai(client: AsyncOpenAI, semaphore: asyncio.Se
 # ==========================================================
 # 🌐 [중간 다리] 웹 기사 본문 스크래퍼 구동 함수
 # ==========================================================
+# 추천/관련/인기 기사, 댓글 등 '다른 기사'가 섞여 들어오는 영역을 식별하는 id/class 키워드.
+# 이런 영역을 제거하지 않으면 사이드바의 무관한 헤드라인이 본문에 섞여, Gemini가 엉뚱한 기사의
+# 일정을 뽑아내는 오매칭이 생긴다.
+_NOISE_SECTION_KEYWORDS = (
+    "related", "recommend", "reco", "ranking", "rank", "popular", "most", "best",
+    "comment", "reply", "sns", "share", "banner", "advert", "sidebar", "aside",
+    "link_news", "news_link", "footer", "copyright", "promo", "widget",
+    "많이", "인기", "추천", "관련",
+)
+
+# 언론사별 본문 컨테이너 후보 (구체적인 것부터). 여기에 걸리면 페이지 전체가 아니라 본문만 사용.
+_ARTICLE_BODY_SELECTORS = (
+    {"attrs": {"itemprop": "articleBody"}},
+    {"name": "div", "attrs": {"id": "articleBodyContents"}},
+    {"name": "div", "attrs": {"id": "articleBody"}},
+    {"name": "div", "attrs": {"id": "article-body"}},
+    {"name": "div", "attrs": {"id": "newsct_article"}},
+    {"name": "div", "attrs": {"id": "dic_area"}},
+    {"name": "div", "attrs": {"class": "article_body"}},
+    {"name": "div", "attrs": {"class": "article-body"}},
+    {"name": "div", "attrs": {"class": "article-view-content-div"}},
+    {"name": "div", "attrs": {"class": "news_body"}},
+    {"name": "div", "attrs": {"class": "art_text"}},
+    {"name": "article"},
+)
+
+
+def _looks_like_noise(tag) -> bool:
+    ident = " ".join(filter(None, [
+        tag.get("id", "") or "",
+        " ".join(tag.get("class", []) or []),
+    ])).lower()
+    return any(kw in ident for kw in _NOISE_SECTION_KEYWORDS)
+
+
 def scrape_news_body(url: str) -> str:
     """기사 URL을 읽어와 순수 본문 텍스트만 추출합니다."""
     if not url or not url.startswith("http"):
@@ -362,21 +397,28 @@ def scrape_news_body(url: str) -> str:
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # 언론사 페이지의 무관한 태그 미리 제거
-        for s in soup(["script", "style", "nav", "header", "footer", "aside"]):
+        # 1) 명백한 비-본문 태그 제거
+        for s in soup(["script", "style", "nav", "header", "footer", "aside", "form"]):
             s.extract()
 
-        # 일반적인 본문 컨테이너 텍스트 추출 (없으면 전체 텍스트)
-        article_body = soup.find("div", id="articleBody") or soup.find("article") or soup.find("div",
-                                                                                               class_="article_body")
-        if article_body:
-            text = article_body.get_text(separator=" ")
-        else:
-            text = soup.get_text(separator=" ")
+        # 2) 추천/관련/인기/댓글 등 '다른 기사'가 섞이는 영역 제거 (id/class 키워드 기반)
+        for tag in soup.find_all(True):
+            if _looks_like_noise(tag):
+                tag.extract()
 
-        # 공백 정리
+        # 3) 본문 컨테이너를 후보 셀렉터로 우선 탐색. 걸리면 그 안만 사용해 사이드바 유입을 차단한다.
+        article_body = None
+        for sel in _ARTICLE_BODY_SELECTORS:
+            found = soup.find(sel.get("name"), attrs=sel.get("attrs", {}))
+            if found:
+                article_body = found
+                break
+
+        # 4) 후보에 못 걸리면 전체 텍스트로 폴백(단, 위에서 노이즈 영역은 이미 제거된 상태)
+        text = (article_body or soup).get_text(separator=" ")
+
         cleaned_text = " ".join(text.split())
-        return cleaned_text[:2500]  # 상한선 축소 (일정/날짜 정보는 대개 기사 도입부에 위치 - 비용 절감)
+        return cleaned_text[:2500]  # 상한선 (일정/날짜 정보는 대개 기사 도입부에 위치 - 비용 절감)
     except Exception as e:
         logger.warning(f"⚠️ 본문 크롤링 실패 ({url}): {e}")
         return ""
@@ -410,6 +452,10 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
     gemini_prompt = (
         "너는 뉴스 본문 전체를 읽고 핵심적인 '향후 미래 일정 및 예고된 이벤트'를 구조화 데이터로 뽑아내는 데이터 엔지니어다.\n"
         "본문 안의 광고, 기자 메일 등 노이즈는 완전히 배제하고 오직 미래 일정 정보에만 집중해라.\n\n"
+        f"⚠️ 이 기사의 제목(주제)은 다음과 같다: '{title}'\n"
+        "본문에는 추천기사/관련기사/인기기사처럼 이 기사의 주제와 무관한 다른 기사 조각이 섞여 있을 수 있다.\n"
+        "반드시 위 '제목의 주제'에 해당하는 일정만 추출해라. 제목과 무관한 다른 사건/기업/인물의 일정은 절대 뽑지 마라.\n"
+        "만약 본문에서 '제목의 주제'에 해당하는 미래 일정을 찾을 수 없으면, event_title에 빈 문자열(\"\")을 반환해라.\n\n"
         f"이 기사의 발행일은 '{publish_date or '알 수 없음'}'이다. '내년', '다음달', '이번 분기' 같은 상대적 시점 표현은 "
         "반드시 이 발행일을 기준으로 절대 날짜로 환산해라.\n\n"
         "exact_date 형식 규칙 (요일 표기 절대 금지):\n"
@@ -446,8 +492,16 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
 
         extracted_data = json.loads(response.text)
 
+        # 제목(주제)과 무관해 Gemini가 빈 event_title을 반환한 경우: 추출할 일정이 없다는 뜻이므로
+        # 스킵 마커를 남겨 최종 결과에서 제외한다(엉뚱한 기사 일정이 섞여 들어오는 오매칭 방지).
+        raw_event_title = (extracted_data.get("event_title") or "").strip()
+        if not raw_event_title:
+            news["extracted_event"] = ""
+            logger.info(f"▓ 🚫 [3단계 제외] 제목과 무관한 일정으로 판단되어 스킵: '{title[:40]}'")
+            return news
+
         normalized_event, normalized_date = normalize_schedule_date(
-            extracted_data.get("event_title"), extracted_data.get("exact_date")
+            raw_event_title, extracted_data.get("exact_date")
         )
         news["extracted_event"] = normalized_event
         news["exact_date"] = normalized_date
@@ -534,7 +588,13 @@ async def main(input_file: str = None, output_file: str = None):
         gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
         gemini_tasks = [extract_schedule_from_body_gemini(gemini_client, news, cost_tracker) for news in selected_news]
-        final_schedule_results = await asyncio.gather(*gemini_tasks)
+        gemini_results = await asyncio.gather(*gemini_tasks)
+
+        # 제목과 무관해 스킵 마커(빈 extracted_event)가 달린 항목은 최종 결과에서 제외한다.
+        final_schedule_results = [n for n in gemini_results if (n.get("extracted_event") or "").strip()]
+        skipped_irrelevant = len(gemini_results) - len(final_schedule_results)
+        if skipped_irrelevant:
+            logger.info(f"🚫 [주제 불일치 제외] 제목과 무관한 일정 {skipped_irrelevant}건을 최종 결과에서 제외했습니다.")
 
         # 최종 저장
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
