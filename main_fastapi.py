@@ -209,17 +209,15 @@ def send_telegram_notification(items, is_global=False):
         time.sleep(0.3)  # 텔레그램 플러드 제한 방지용 짧은 간격
 
 # ====================================================
-# 🌐 [해외] 영문 피드(FinancialJuice 등) 제목 한글 번역 — Azure Translator 사용.
-# (F0 무료 티어: 월 200만 자, 매달 리셋, 영구 무료. 한도 초과 시 429/403만 반환하고 다음 달 리셋
-#  되므로 의도치 않은 과금 위험이 없다. 키가 .env에 없으면 번역을 건너뛰고 원문을 그대로 사용한다.)
+# 🌐 [해외] 영문 피드(FinancialJuice 등) 제목 한글 번역 — 구글 무료 엔드포인트를 우선 쓰고,
+# 실패하면 GPT로 폴백한다. (구글: 무료지만 비공식이라 간헐적 429 가능 / GPT: 유료지만 안정적,
+#  제목 번역이라 비용은 월 수백 원 수준. OPENAI_API_KEY가 .env에 없으면 GPT 폴백은 건너뛴다.)
 # ====================================================
 # 도메인에 이 문자열이 포함되면 제목을 한글로 번역한다. 영문 전용 해외 피드가 늘어나면 여기에 추가.
 ENGLISH_TITLE_TRANSLATE_DOMAINS = ["financialjuice.com"]
 
-AZURE_TRANSLATOR_KEY = os.environ.get("AZURE_TRANSLATOR_KEY", "")
-# 리소스를 특정 지역(예: koreacentral)으로 만들면 이 지역 헤더가 필수. 전역(Global) 리소스면 비워둬도 됨.
-AZURE_TRANSLATOR_REGION = os.environ.get("AZURE_TRANSLATOR_REGION", "")
-AZURE_TRANSLATOR_URL = "https://api.cognitive.microsofttranslator.com/translate"
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+GPT_TRANSLATE_MODEL = "gpt-4o-mini"
 
 # 동일 제목(예: 매 주기 반복되는 "120-Day Correlation Matrix" 류)을 다시 번역기에 물어보지 않도록
 # 프로세스 메모리에 캐시해 API 호출/글자수 소모 자체를 줄인다. 재시작하면 초기화된다.
@@ -238,7 +236,7 @@ _translation_recent = deque(maxlen=20)
 
 # 🩺 [구글 무료 엔드포인트 상시 헬스체크] 실제 뉴스 제목 번역과 무관하게, 10분마다 짧은 테스트
 # 문구를 구글 비공식 엔드포인트에 보내 지금 이 서버 IP가 차단(429) 상태인지 미리 확인해둔다.
-# 현재 번역은 Azure가 담당하지만, 구글 무료 폴백을 지금 쓸 수 있는 상태인지 대시보드에서 바로 보려는 목적.
+# 번역 1순위인 구글 무료 엔드포인트가 지금 쓸 수 있는 상태인지 대시보드에서 바로 보려는 목적.
 _google_translate_health = {
     "available": None,  # None = 아직 한 번도 확인 안 됨
     "checked_at": None,
@@ -290,40 +288,13 @@ def _record_translation_event(ok: bool, original: str, translated: str = "", err
     })
 
 
-# 구글 무료 폴백 호출 간격 제어 (연타로 인한 429 차단 회피)
+# 구글 무료 엔드포인트 호출 간격 제어 (연타로 인한 429 차단 회피)
 _GOOGLE_MIN_INTERVAL_SEC = 0.6
 _last_google_translate_time = 0.0
 
 
-def _translate_via_azure(title: str):
-    """Azure Translator로 번역. 성공 시 문자열, 키 미설정/실패 시 None 반환."""
-    if not AZURE_TRANSLATOR_KEY:
-        return None
-
-    headers = {
-        "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
-        "Content-Type": "application/json; charset=UTF-8",
-    }
-    if AZURE_TRANSLATOR_REGION:
-        headers["Ocp-Apim-Subscription-Region"] = AZURE_TRANSLATOR_REGION
-
-    try:
-        response = requests.post(
-            AZURE_TRANSLATOR_URL,
-            params={"api-version": "3.0", "from": "en", "to": "ko"},
-            headers=headers,
-            json=[{"Text": title}],
-            timeout=8,
-        )
-        response.raise_for_status()
-        return response.json()[0]["translations"][0]["text"].strip()
-    except Exception as e:
-        logger.warning(f"⚠️ [Azure 번역 실패] '{title[:40]}...' : {e}")
-        return None
-
-
 def _translate_via_google(title: str):
-    """구글 무료 엔드포인트로 번역(Azure 실패 시 폴백). 성공 시 문자열, 실패 시 None.
+    """구글 무료 엔드포인트로 번역(1순위). 성공 시 문자열, 실패 시 None.
     연타 시 429가 뜨므로 최소 간격을 두고, 429면 짧게 재시도한다."""
     global _last_google_translate_time
 
@@ -351,27 +322,58 @@ def _translate_via_google(title: str):
     return None
 
 
+def _translate_via_gpt(title: str):
+    """GPT로 번역(구글 실패 시 폴백). 성공 시 문자열, 키 미설정/실패 시 None 반환."""
+    if not OPENAI_API_KEY:
+        return None
+
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                     "Content-Type": "application/json"},
+            json={
+                "model": GPT_TRANSLATE_MODEL,
+                "messages": [
+                    {"role": "system",
+                     "content": "You are a professional translator. Translate the English news headline "
+                                "into natural Korean. Output ONLY the translated headline text, with no "
+                                "quotes, labels, or extra commentary."},
+                    {"role": "user", "content": title},
+                ],
+                "temperature": 0.0,
+            },
+            timeout=12,
+        )
+        response.raise_for_status()
+        translated = response.json()["choices"][0]["message"]["content"].strip()
+        return translated or None
+    except Exception as e:
+        logger.warning(f"⚠️ [GPT 번역 실패] '{title[:40]}...' : {e}")
+        return None
+
+
 def translate_title_to_korean(title: str) -> str:
-    """영문 제목을 한국어로 번역한다. Azure를 우선 쓰고, 실패(구독 중지/키 오류/한도 등)하면
-    구글 무료 엔드포인트로 자동 폴백한다. 둘 다 실패하면 원문 제목을 그대로 반환한다."""
+    """영문 제목을 한국어로 번역한다. 구글 무료 엔드포인트를 우선 쓰고, 실패(429 차단 등)하면
+    GPT로 자동 폴백한다. 둘 다 실패하면 원문 제목을 그대로 반환한다."""
     if not title.strip():
         return title
 
     if title in _translation_cache:
         return _translation_cache[title]
 
-    translated = _translate_via_azure(title)
-    engine = "azure"
+    translated = _translate_via_google(title)
+    engine = "google"
     if not translated:
-        translated = _translate_via_google(title)
-        engine = "google"
+        translated = _translate_via_gpt(title)
+        engine = "gpt"
 
     if translated:
         _translation_cache[title] = translated
         _record_translation_event(True, title, translated=translated, engine=engine)
         return translated
 
-    _record_translation_event(False, title, error="Azure·구글 모두 번역 실패", engine="none")
+    _record_translation_event(False, title, error="구글·GPT 모두 번역 실패", engine="none")
     return title
 
 
@@ -1453,7 +1455,9 @@ def get_blacklisted_news(offset: int = 0):
 @app.get("/api/translation-status")
 def get_translation_status():
     return {
-        "enabled": bool(AZURE_TRANSLATOR_KEY),
+        # 구글 무료 엔드포인트는 키가 필요 없어 번역은 항상 활성. (GPT 폴백만 OPENAI_API_KEY에 의존)
+        "enabled": True,
+        "gpt_fallback_ready": bool(OPENAI_API_KEY),
         "success_count": _translation_stats["success_count"],
         "fail_count": _translation_stats["fail_count"],
         "last_success_at": _translation_stats["last_success_at"],

@@ -64,7 +64,7 @@
                         <span id="translation-status-summary" class="text-[10px] text-slate-500 font-mono"></span>
                     </div>
                     <div id="google-fallback-status" class="flex items-center justify-between mb-2 pb-2 border-b border-slate-800 text-[10px] text-slate-500">
-                        <span>구글 무료 엔드포인트(폴백)</span>
+                        <span>구글 무료 엔드포인트(1순위)</span>
                         <span id="google-fallback-text" class="font-mono">확인 전</span>
                     </div>
                     <div id="translation-status-list" class="space-y-2 max-h-72 overflow-y-auto"></div>
@@ -580,10 +580,10 @@
                 } else {
                     list.innerHTML = data.recent.map(ev => {
                         if (ev.ok) {
-                            const engineBadge = ev.engine === 'google'
-                                ? '<span class="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">구글 폴백</span>'
-                                : (ev.engine === 'azure'
-                                    ? '<span class="text-[9px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">Azure</span>'
+                            const engineBadge = ev.engine === 'gpt'
+                                ? '<span class="text-[9px] bg-violet-500/15 text-violet-400 border border-violet-500/30 px-1.5 py-0.5 rounded font-bold">GPT 폴백</span>'
+                                : (ev.engine === 'google'
+                                    ? '<span class="text-[9px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">구글</span>'
                                     : '');
                             return `
                                 <div class="bg-slate-800/60 border border-slate-800 rounded-lg p-2">
