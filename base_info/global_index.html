@@ -580,10 +580,15 @@
                 } else {
                     list.innerHTML = data.recent.map(ev => {
                         if (ev.ok) {
+                            const engineBadge = ev.engine === 'google'
+                                ? '<span class="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">구글 폴백</span>'
+                                : (ev.engine === 'azure'
+                                    ? '<span class="text-[9px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">Azure</span>'
+                                    : '');
                             return `
                                 <div class="bg-slate-800/60 border border-slate-800 rounded-lg p-2">
                                     <div class="flex justify-between items-center mb-1">
-                                        <span class="text-emerald-400 font-bold">✅ 성공</span>
+                                        <span class="text-emerald-400 font-bold flex items-center gap-1.5">✅ 성공 ${engineBadge}</span>
                                         <span class="text-slate-500 font-mono text-[10px]">${ev.time}</span>
                                     </div>
                                     <div class="text-slate-500 line-through decoration-slate-700">${escapeHtml(ev.original)}</div>

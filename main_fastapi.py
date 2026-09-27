@@ -271,7 +271,7 @@ async def google_translate_health_check_loop():
         await asyncio.sleep(600)  # 10분마다 재확인
 
 
-def _record_translation_event(ok: bool, original: str, translated: str = "", error: str = ""):
+def _record_translation_event(ok: bool, original: str, translated: str = "", error: str = "", engine: str = ""):
     now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
     if ok:
         _translation_stats["success_count"] += 1
@@ -285,20 +285,20 @@ def _record_translation_event(ok: bool, original: str, translated: str = "", err
         "original": original,
         "translated": translated,
         "error": error,
+        "engine": engine,
         "time": now_str,
     })
 
 
-def translate_title_to_korean(title: str) -> str:
-    """영문 뉴스 제목을 Azure Translator로 한국어 번역한다. 키 미설정/실패 시 원문 제목을 그대로 반환한다."""
-    if not title.strip():
-        return title
+# 구글 무료 폴백 호출 간격 제어 (연타로 인한 429 차단 회피)
+_GOOGLE_MIN_INTERVAL_SEC = 0.6
+_last_google_translate_time = 0.0
 
+
+def _translate_via_azure(title: str):
+    """Azure Translator로 번역. 성공 시 문자열, 키 미설정/실패 시 None 반환."""
     if not AZURE_TRANSLATOR_KEY:
-        return title
-
-    if title in _translation_cache:
-        return _translation_cache[title]
+        return None
 
     headers = {
         "Ocp-Apim-Subscription-Key": AZURE_TRANSLATOR_KEY,
@@ -316,15 +316,63 @@ def translate_title_to_korean(title: str) -> str:
             timeout=8,
         )
         response.raise_for_status()
-        translated = response.json()[0]["translations"][0]["text"].strip()
-        result = translated if translated else title
-        _translation_cache[title] = result
-        _record_translation_event(True, title, translated=result)
-        return result
+        return response.json()[0]["translations"][0]["text"].strip()
     except Exception as e:
-        logger.warning(f"⚠️ [제목 번역 실패] '{title[:40]}...' 번역 중 오류: {e}")
-        _record_translation_event(False, title, error=str(e))
+        logger.warning(f"⚠️ [Azure 번역 실패] '{title[:40]}...' : {e}")
+        return None
+
+
+def _translate_via_google(title: str):
+    """구글 무료 엔드포인트로 번역(Azure 실패 시 폴백). 성공 시 문자열, 실패 시 None.
+    연타 시 429가 뜨므로 최소 간격을 두고, 429면 짧게 재시도한다."""
+    global _last_google_translate_time
+
+    for attempt in range(3):
+        wait = _GOOGLE_MIN_INTERVAL_SEC - (time.time() - _last_google_translate_time)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            _last_google_translate_time = time.time()
+            response = requests.get(
+                "https://translate.googleapis.com/translate_a/single",
+                params={"client": "gtx", "sl": "en", "tl": "ko", "dt": "t", "q": title},
+                timeout=8,
+            )
+            response.raise_for_status()
+            data = response.json()
+            translated = "".join(seg[0] for seg in data[0] if seg and seg[0]).strip()
+            return translated or None
+        except Exception as e:
+            if "429" in str(e) and attempt < 2:
+                time.sleep(2 * (attempt + 1))
+                continue
+            logger.warning(f"⚠️ [구글 번역 실패] '{title[:40]}...' : {e}")
+            return None
+    return None
+
+
+def translate_title_to_korean(title: str) -> str:
+    """영문 제목을 한국어로 번역한다. Azure를 우선 쓰고, 실패(구독 중지/키 오류/한도 등)하면
+    구글 무료 엔드포인트로 자동 폴백한다. 둘 다 실패하면 원문 제목을 그대로 반환한다."""
+    if not title.strip():
         return title
+
+    if title in _translation_cache:
+        return _translation_cache[title]
+
+    translated = _translate_via_azure(title)
+    engine = "azure"
+    if not translated:
+        translated = _translate_via_google(title)
+        engine = "google"
+
+    if translated:
+        _translation_cache[title] = translated
+        _record_translation_event(True, title, translated=translated, engine=engine)
+        return translated
+
+    _record_translation_event(False, title, error="Azure·구글 모두 번역 실패", engine="none")
+    return title
 
 
 def should_translate_title(url: str) -> bool:
