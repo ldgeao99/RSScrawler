@@ -913,12 +913,18 @@ def rss_monitor_thread(
                 for item in cached_stream_ref:
                     seen_links.add(item["link"])
                     seen_titles.add((item.get("source", ""), item.get("title", "")))
+                    if item.get("original_title"):
+                        seen_titles.add((item.get("source", ""), item["original_title"]))
                 for item in cached_filtered_ref:
                     seen_links.add(item["link"])
                     seen_titles.add((item.get("source", ""), item.get("title", "")))
+                    if item.get("original_title"):
+                        seen_titles.add((item.get("source", ""), item["original_title"]))
                 for item in cached_blacklisted_ref:
                     seen_links.add(item["link"])
                     seen_titles.add((item.get("source", ""), item.get("title", "")))
+                    if item.get("original_title"):
+                        seen_titles.add((item.get("source", ""), item["original_title"]))
 
                 target_channels = [dict(ch) for ch in cached_rss_ref]
                 categorized_kw = dict(cached_keywords_ref)
@@ -1086,10 +1092,18 @@ def rss_monitor_thread(
                             # 무의미하게 터미널을 채우던 대량의 print 코드를 제거하여 자원을 아낍니다.
                             continue
 
+                        # 🔁 [중복 스킵 - 1차] 번역 '전에' 원문 제목으로 먼저 걸러낸다. FinancialJuice처럼
+                        # 같은 기사를 다른 링크로 재발행하는 피드는 매 스캔마다 중복이 유입되는데, 이미 수집한
+                        # 기사면 번역(API/캐시 조회)과 로그 자체를 건너뛴다. seen_titles에는 저장된 기사들의
+                        # 원문 제목(original_title)도 들어있어 서버 재시작 직후(캐시 콜드)에도 바로 매칭된다.
+                        original_title = title
+                        if (resolved_source_name, original_title) in seen_titles:
+                            print(f"    🔁 [중복 스킵] {resolved_source_name} ➔ 동일 제목 기사 중복 감지: {original_title[:30]}...")
+                            continue
+
                         # 🌐 [해외] 영문 전용 피드(FinancialJuice 등)는 제목을 한글로 번역한 뒤
                         # 이후 블랙리스트/키워드 매칭도 번역된 한글 제목 기준으로 수행되게 한다.
                         if should_translate_title(url):
-                            original_title = title
                             if "financialjuice.com" in url:
                                 title = translate_financialjuice_title(title)
                             else:
@@ -1097,11 +1111,13 @@ def rss_monitor_thread(
                             if title != original_title:
                                 print(f"    🌐 [제목 번역] '{original_title[:30]}...' → '{title[:30]}...'")
 
-                        # 🔁 [중복 스킵] 같은 매체에서 동일 제목 기사가 다른 링크로 재발행된 경우 걸러낸다.
+                        # 🔁 [중복 스킵 - 2차 안전망] 번역된 제목 기준으로도 한 번 더 확인한다(과거 데이터/전환기
+                        # 호환용 - 저장된 기사에 original_title이 아직 없을 수 있음).
                         title_key = (resolved_source_name, title)
                         if title_key in seen_titles:
                             print(f"    🔁 [중복 스킵] {resolved_source_name} ➔ 동일 제목 기사 중복 감지: {title[:30]}...")
                             continue
+                        seen_titles.add((resolved_source_name, original_title))
                         seen_titles.add(title_key)
 
                         # 🟢 유효 일자(오늘/어제) 내의 기사만 통과되어 출력 및 수집 진행
@@ -1114,6 +1130,9 @@ def rss_monitor_thread(
 
                         item = {
                             "title": title,
+                            # 번역 전 원문 제목. 재시작 후에도 '번역 전' 단계에서 중복을 걸러내기 위해 보관한다.
+                            # (번역 안 하는 피드는 title과 동일)
+                            "original_title": original_title,
                             "link": link,
                             "source": resolved_source_name,
                             "time_kst": news_time_str,
