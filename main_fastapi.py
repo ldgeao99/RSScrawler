@@ -111,7 +111,7 @@ def send_server_restart_notification():
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={
                 "chat_id": TELEGRAM_CHAT_ID,
-                "text": f"🔄 RSS 뉴스 서버가 시작/재시작되었습니다.\n시각: {started_at}\nPID: {os.getpid()}",
+                "text": f"🚀 RSS 뉴스 서버가 시작되었습니다.\n시각: {started_at}\nPID: {os.getpid()}",
             },
             timeout=10,
         )
