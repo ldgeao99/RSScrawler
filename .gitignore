@@ -39,3 +39,8 @@ global_news_list_stream.json
 
 # 파이프라인 산출물
 extracted_schedule/
+
+# 자동 업데이트 감독 프로세스의 로컬 파일
+.auto_run.lock
+auto_run.log
+output.log
