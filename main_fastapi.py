@@ -100,6 +100,30 @@ PORT = 8080
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+def send_server_restart_notification():
+    """별도 스레드에서 서버 시작 알림을 전송한다."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.info("서버 시작 알림 생략: 텔레그램 설정이 없습니다.")
+        return
+    started_at = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S KST")
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": f"🔄 RSS 뉴스 서버가 시작/재시작되었습니다.\n시각: {started_at}\nPID: {os.getpid()}",
+            },
+            timeout=10,
+        )
+        if response.status_code == 200 and response.json().get("ok"):
+            logger.info("텔레그램 서버 시작 알림 전송 완료")
+        else:
+            logger.warning("텔레그램 서버 시작 알림 실패 (HTTP %s)", response.status_code)
+    except Exception:
+        # 예외/응답 본문에 포함될 수 있는 봇 토큰을 로그에 남기지 않는다.
+        logger.warning("텔레그램 서버 시작 알림 전송 실패")
+
+
 SENTIMENT_EMOJI = {
     "positive": "🟢",
     "negative": "🔴",
@@ -1964,6 +1988,14 @@ if __name__ == "__main__":
     async def custom_startup(**kwargs):
         # 원본 startup 함수에 그대로 kwargs 전달
         await original_startup(**kwargs)
+
+        if not server.started:
+            return
+        threading.Thread(
+            target=send_server_restart_notification,
+            name="telegram-startup-notification",
+            daemon=True,
+        ).start()
 
         # 비동기 이벤트 루프에 스케줄러 태스크 등록 명시
         asyncio.create_task(
