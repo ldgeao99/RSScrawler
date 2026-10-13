@@ -1263,6 +1263,11 @@ async def get_dashboard():
     return FileResponse("base_info/index.html")
 
 
+@app.get("/disclosure")
+async def get_disclosure_dashboard():
+    return FileResponse("base_info/disclosure.html")
+
+
 @app.get("/channel-view")
 async def get_channel_view():
     return FileResponse("base_info/channel_view.html")
