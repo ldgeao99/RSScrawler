@@ -31,7 +31,7 @@
     </header>
 
     <main class="flex-1 w-full max-w-5xl mx-auto px-4 py-8 space-y-4">
-        <p class="text-[11px] text-slate-500">💡 매일 새벽 3개 스케줄러(백업 00:00 → 일정 추출 00:15 → 기업명 동기화 01:00 KST)가 순서대로 실행되고, 실행 결과가 여기 자동으로 기록됩니다. 15초마다 자동 갱신됩니다.</p>
+        <p class="text-[11px] text-slate-500">💡 매일 새벽 스케줄러(뉴스·기업공시 백업 00:00 → 일정 추출 00:15 → 기업명 동기화 01:00 KST)가 순서대로 실행되고, 실행 결과가 여기 자동으로 기록됩니다. 15초마다 자동 갱신됩니다.</p>
 
         <div id="batch-cards" class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="text-slate-600 text-xs py-16 text-center col-span-3">배치 실행 이력을 불러오는 중입니다...</div>
@@ -56,6 +56,11 @@
                 icon: "💾",
                 schedule: "매일 00:00 KST",
                 desc: "어제 수집분(전체·포착·격리 뉴스)을 news_back_up 폴더에 날짜별 파일로 분리 백업하고, 라이브 파일을 비운 뒤 메모리에서 오늘·어제가 아닌 과거 기사를 정리합니다.",
+            },
+            "disclosure_backup_cleanup": {
+                icon: "💾",
+                schedule: "매일 00:00 KST",
+                desc: "전체·포착·격리 공시를 news_back_up에 날짜별로 백업하고, 원본 파일과 메모리에는 오늘·어제 데이터만 유지합니다. 날짜가 불명확한 데이터는 보존합니다.",
             },
             "schedule_extraction": {
                 icon: "📅",

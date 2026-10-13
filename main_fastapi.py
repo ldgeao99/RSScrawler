@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 # 🚀 분리한 백업/일정추출 스케줄러 모듈 임포트
 import back_up_scheduler
 import global_back_up_scheduler
+import disclosure_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
 import batch_logger
@@ -836,6 +837,17 @@ MEMORY_CACHES_CONFIG_GLOBAL = {
     "stream": cached_global_stream,
     "filtered": cached_global_filtered,
     "blacklisted": cached_global_blacklisted
+}
+
+FILE_PATHS_CONFIG_DISCLOSURE = {
+    "stream": DISCLOSURE_STREAM_NEWS_FILE,
+    "filtered": DISCLOSURE_FILTERED_NEWS_FILE,
+    "blacklisted": DISCLOSURE_BLACKLISTED_NEWS_FILE,
+}
+MEMORY_CACHES_CONFIG_DISCLOSURE = {
+    "stream": cached_disclosure_stream,
+    "filtered": cached_disclosure_filtered,
+    "blacklisted": cached_disclosure_blacklisted,
 }
 
 app = FastAPI(
@@ -2251,6 +2263,14 @@ if __name__ == "__main__":
             )
         )
         logger.info("⚡ [엔진 직결] Uvicorn 루프에 해외 뉴스 백업 스케줄러(global_back_up_scheduler) 비동기 태스크 등록을 완료했습니다.")
+
+        asyncio.create_task(
+            disclosure_back_up_scheduler.daily_backup_and_cleanup_scheduler(
+                db_lock=db_lock,
+                file_paths=FILE_PATHS_CONFIG_DISCLOSURE,
+                memory_caches=MEMORY_CACHES_CONFIG_DISCLOSURE,
+            )
+        )
 
         # 일정 추출 파이프라인 스케줄러 등록 (백업 스케줄러와 실행 시각 안 겹치게 00:15 KST)
         asyncio.create_task(schedule_extraction_scheduler.daily_schedule_extraction_scheduler())

@@ -20,6 +20,7 @@ KST = timezone(timedelta(hours=9))
 # 배치별 표시 순서(대시보드 정렬용). 스케줄러 실행 순서 그대로.
 BATCH_ORDER = {
     "backup_cleanup": 0,
+    "disclosure_backup_cleanup": 0.5,
     "schedule_extraction": 1,
     "company_sync": 2,
 }
