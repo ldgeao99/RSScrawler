@@ -579,6 +579,15 @@ GLOBAL_FILTERED_NEWS_FILE = "global_news_list_filtered.json"
 GLOBAL_STREAM_NEWS_FILE = "global_news_list_stream.json"
 GLOBAL_BLACKLISTED_NEWS_FILE = "global_news_list_blacklisted.json"
 
+# 기업공시 전용 설정/피드 파일
+DISCLOSURE_RSS_DB_FILE = "base_info/disclosure_rss_list.json"
+DISCLOSURE_KEYWORD_DB_FILE = "base_info/disclosure_keyword_list_include.json"
+DISCLOSURE_BLACKLIST_DB_FILE = "base_info/disclosure_keyword_list_exclude.json"
+DISCLOSURE_TEMP_BLACKLIST_DB_FILE = "base_info/disclosure_keyword_list_exclude_temp.json"
+DISCLOSURE_FILTERED_NEWS_FILE = "disclosure_news_list_filtered.json"
+DISCLOSURE_STREAM_NEWS_FILE = "disclosure_news_list_stream.json"
+DISCLOSURE_BLACKLISTED_NEWS_FILE = "disclosure_news_list_blacklisted.json"
+
 BACKUP_DIR_NAME = "news_back_up"  # back_up_scheduler.py / global_back_up_scheduler.py 와 동일한 백업 폴더
 
 DEFAULT_CATEGORIZED_KEYWORDS = {
@@ -792,6 +801,17 @@ cached_global_filtered = []
 cached_global_blacklisted = []
 
 global_rss_response_status = {}
+
+# 기업공시 전용 캐시 (등록된 RSS 채널만 수집)
+cached_disclosure_keywords = load_keywords(DISCLOSURE_KEYWORD_DB_FILE, {key: [] for key in DEFAULT_GLOBAL_CATEGORIZED_KEYWORDS})
+cached_disclosure_blacklist = load_blacklist(DISCLOSURE_BLACKLIST_DB_FILE, [])
+cached_disclosure_temp_blacklist = load_blacklist(DISCLOSURE_TEMP_BLACKLIST_DB_FILE, [])
+cached_disclosure_rss = load_rss(DISCLOSURE_RSS_DB_FILE, [])
+cached_disclosure_stream = []
+cached_disclosure_filtered = []
+cached_disclosure_blacklisted = []
+disclosure_rss_response_status = {}
+
 
 # ====================================================
 # 🪐 [이 위치로 이동] 백업 스케줄러 자원 매핑 데이터 준비
@@ -1902,6 +1922,193 @@ async def post_global_rss(updated_rss_urls: list = Body(...)):
 # ----------------------------------------------------
 # 🚀 서버 최초 실행 및 파일 전체 메모리 적재 프로세스
 # ----------------------------------------------------
+# 기업공시 페이지 및 API (기존 인증 미들웨어 적용)
+@app.get("/disclosure-channel-view")
+async def get_disclosure_channel_view():
+    return FileResponse("base_info/disclosure_channel_view.html")
+
+
+@app.get("/disclosure-trash-view")
+async def get_disclosure_trash_view():
+    return FileResponse("base_info/disclosure_trash_view.html")
+
+
+@app.get("/disclosure-keyword-settings")
+async def get_disclosure_keyword_settings():
+    return FileResponse("base_info/disclosure_keyword_settings.html")
+
+
+@app.get("/disclosure-rss-settings")
+async def get_disclosure_rss_settings():
+    return FileResponse("base_info/disclosure_rss_settings.html")
+
+
+@app.get("/api/disclosure-filtered-news/stats")
+def get_disclosure_filtered_news_stats():
+    with db_lock: snapshot = list(cached_disclosure_filtered)
+    return _compute_filtered_news_stats("disclosure_news_list_filtered", snapshot)
+
+
+@app.get("/api/disclosure-realtime-news/stats")
+def get_disclosure_stream_news_stats():
+    with db_lock: snapshot = list(cached_disclosure_stream)
+    return _compute_filtered_news_stats("disclosure_news_list_stream", snapshot)
+
+
+@app.get("/api/disclosure-realtime-news")
+def get_disclosure_all_news(offset: int = 0):
+    with db_lock: current_data = list(cached_disclosure_stream)
+    return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/disclosure-realtime-news/search")
+def search_disclosure_realtime_news(q: str = ""):
+    """기업공시 실시간 전체 뉴스 피드 검색. disclosure_news_list_stream.json 전체(최근 2일 보관분)를 훑는다."""
+    query = q.strip().lower()
+    if not query:
+        return {"total_count": 0, "news": []}
+
+    with db_lock: current_data = list(cached_disclosure_stream)
+    matched = [item for item in current_data if query in item.get("title", "").lower()]
+    return _get_safe_memory_data(matched, offset=0)
+
+
+@app.get("/api/disclosure-filtered-news")
+def get_disclosure_filtered_news(offset: int = 0):
+    with db_lock: current_data = list(cached_disclosure_filtered)
+    return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/disclosure-filtered-news/search")
+def search_disclosure_filtered_news(q: str = ""):
+    """기업공시 키워드 포착 뉴스 피드 검색. disclosure_news_list_filtered.json 전체(최근 2일 보관분)를 훑는다."""
+    query = q.strip().lower()
+    if not query:
+        return {"total_count": 0, "news": []}
+
+    with db_lock: current_data = list(cached_disclosure_filtered)
+    matched = [item for item in current_data if query in item.get("title", "").lower()]
+    return _get_safe_memory_data(matched, offset=0)
+
+
+@app.get("/api/disclosure-blacklisted-news")
+def get_disclosure_blacklisted_news(offset: int = 0):
+    with db_lock: current_data = list(cached_disclosure_blacklisted)
+    return _get_safe_memory_data(current_data, offset)
+
+
+@app.get("/api/disclosure-keywords")
+async def get_disclosure_keywords(mode: str = "flat"):
+    global cached_disclosure_keywords
+    with db_lock:
+        if mode == "raw": return cached_disclosure_keywords
+        flat = []
+        for k in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance"]:
+            flat.extend(cached_disclosure_keywords.get(k, []))
+        return flat
+
+
+@app.get("/api/disclosure-blacklist")
+async def get_disclosure_blacklist():
+    global cached_disclosure_blacklist
+    with db_lock: return cached_disclosure_blacklist
+
+
+@app.get("/api/disclosure-blacklist-temp")
+async def get_disclosure_temp_blacklist():
+    global cached_disclosure_temp_blacklist
+    with db_lock: return cached_disclosure_temp_blacklist
+
+
+@app.get("/api/disclosure-rss")
+async def get_disclosure_rss_channels():
+    kst_tz = timezone(timedelta(hours=9))
+    now_kst = datetime.now(kst_tz)
+    today_start = datetime.combine(now_kst.date(), datetime.min.time(), tzinfo=kst_tz).timestamp()
+
+    with db_lock:
+        response_channels = []
+        for ch in cached_disclosure_rss:
+            ch_url = ch.get("url", "")
+            ch_name = ch.get("name", "수집 채널")
+            ch_status = disclosure_rss_response_status.get(ch_url, "-")
+
+            today_links = set()
+            for source_list in (cached_disclosure_stream, cached_disclosure_filtered, cached_disclosure_blacklisted):
+                for item in source_list:
+                    if item.get("source") == ch_name and item.get("timestamp", 0) >= today_start:
+                        today_links.add(item.get("link"))
+            today_count = len(today_links)
+
+            response_channels.append(
+                {"name": ch_name, "url": ch_url, "enabled": ch.get("enabled", True), "today_count": today_count,
+                 "status_code": ch_status})
+        return response_channels
+
+
+@app.post("/api/disclosure-keywords")
+async def post_disclosure_keywords(updated_categorized: dict):
+    global cached_disclosure_keywords
+    with db_lock:
+        newly_added = list(_flatten_categorized_keywords(updated_categorized) - _flatten_categorized_keywords(cached_disclosure_keywords))
+
+        cached_disclosure_keywords.clear()
+        cached_disclosure_keywords.update(updated_categorized)
+        save_keywords(cached_disclosure_keywords, DISCLOSURE_KEYWORD_DB_FILE)
+
+        positive_set = set(cached_disclosure_keywords.get("positive", []))
+        negative_set = set(cached_disclosure_keywords.get("negative", []))
+        _promote_newly_matched_keywords(newly_added, positive_set, negative_set,
+                                         cached_disclosure_stream, cached_disclosure_filtered, DISCLOSURE_FILTERED_NEWS_FILE)
+    return {"status": "success"}
+
+
+@app.post("/api/disclosure-blacklist")
+async def post_disclosure_blacklist(updated_blacklist: list = Body(...)):
+    global cached_disclosure_blacklist
+    with db_lock:
+        old_set = {kw.strip() for kw in cached_disclosure_blacklist if kw.strip()}
+        new_set = {kw.strip() for kw in updated_blacklist if kw.strip()}
+        newly_added = list(new_set - old_set)
+
+        cached_disclosure_blacklist.clear()
+        cached_disclosure_blacklist.extend(updated_blacklist)
+        save_blacklist(cached_disclosure_blacklist, DISCLOSURE_BLACKLIST_DB_FILE)
+
+        _relocate_newly_blacklisted(newly_added, cached_disclosure_stream, cached_disclosure_filtered, cached_disclosure_blacklisted,
+                                     DISCLOSURE_STREAM_NEWS_FILE, DISCLOSURE_FILTERED_NEWS_FILE, DISCLOSURE_BLACKLISTED_NEWS_FILE)
+    return {"status": "success"}
+
+
+@app.post("/api/disclosure-blacklist-temp")
+async def post_disclosure_temp_blacklist(updated_blacklist: list = Body(...)):
+    global cached_disclosure_temp_blacklist
+    with db_lock:
+        old_set = {kw.strip() for kw in cached_disclosure_temp_blacklist if kw.strip()}
+        new_set = {kw.strip() for kw in updated_blacklist if kw.strip()}
+        newly_added = list(new_set - old_set)
+
+        cached_disclosure_temp_blacklist.clear()
+        cached_disclosure_temp_blacklist.extend(updated_blacklist)
+        save_blacklist(cached_disclosure_temp_blacklist, DISCLOSURE_TEMP_BLACKLIST_DB_FILE)
+
+        _relocate_newly_blacklisted(newly_added, cached_disclosure_stream, cached_disclosure_filtered, cached_disclosure_blacklisted,
+                                     DISCLOSURE_STREAM_NEWS_FILE, DISCLOSURE_FILTERED_NEWS_FILE, DISCLOSURE_BLACKLISTED_NEWS_FILE)
+    return {"status": "success"}
+
+
+@app.post("/api/disclosure-rss")
+async def post_disclosure_rss(updated_rss_urls: list = Body(...)):
+    global cached_disclosure_rss
+    with db_lock:
+        cached_disclosure_rss.clear()
+        for item in updated_rss_urls:
+            cached_disclosure_rss.append(
+                {"name": item.get("name", "수집 채널"), "url": item.get("url", ""), "enabled": item.get("enabled", True)})
+        save_rss(cached_disclosure_rss, DISCLOSURE_RSS_DB_FILE)
+    return {"status": "success"}
+
+
 if __name__ == "__main__":
     print("\n🏁 [시스템 부팅] JSON 데이터베이스 파일 전체를 가상 메모리에 초기 적재합니다...")
 
@@ -1957,6 +2164,19 @@ if __name__ == "__main__":
         print(f"메모리 변수 : global_blacklisted_news   <- {GLOBAL_BLACKLISTED_NEWS_FILE:<30} ({len(cached_global_blacklisted):,d}건)")
         print("--------------------------------------------------------------------------------\n")
 
+        # 공시 피드는 재시작 후에도 복구한다.
+        for cache, filename in (
+            (cached_disclosure_stream, DISCLOSURE_STREAM_NEWS_FILE),
+            (cached_disclosure_filtered, DISCLOSURE_FILTERED_NEWS_FILE),
+            (cached_disclosure_blacklisted, DISCLOSURE_BLACKLISTED_NEWS_FILE),
+        ):
+            items = load_file_entire_content(filename)
+            for item in items:
+                if "time" in item and "time_kst" not in item:
+                    item["time_kst"] = item["time"]
+            items.sort(key=lambda item: item["timestamp"], reverse=True)
+            cache.extend(items)
+
     # 📡 1. RSS 일반 스레드 구동 (국내 + 해외 각자 독립 스레드)
     monitor = threading.Thread(
         target=rss_monitor_thread,
@@ -1976,6 +2196,17 @@ if __name__ == "__main__":
         daemon=True,
     )
     global_monitor.start()
+
+    disclosure_monitor = threading.Thread(
+        target=rss_monitor_thread,
+        args=(cached_disclosure_rss, cached_disclosure_keywords, cached_disclosure_blacklist,
+              cached_disclosure_stream, cached_disclosure_filtered, cached_disclosure_blacklisted,
+              disclosure_rss_response_status, DISCLOSURE_STREAM_NEWS_FILE,
+              DISCLOSURE_FILTERED_NEWS_FILE, DISCLOSURE_BLACKLISTED_NEWS_FILE, "[기업공시] "),
+        kwargs={"is_global": False, "cached_temp_blacklist_ref": cached_disclosure_temp_blacklist},
+        daemon=True,
+    )
+    disclosure_monitor.start()
 
     # ⚡ 2. Uvicorn 구동 옵션 및 비동기 루프 제어
     config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")

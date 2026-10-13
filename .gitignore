@@ -44,3 +44,12 @@ extracted_schedule/
 .auto_run.lock
 auto_run.log
 output.log
+
+# 기업공시 운영 설정 및 수집 데이터
+base_info/disclosure_rss_list.json
+base_info/disclosure_keyword_list_include.json
+base_info/disclosure_keyword_list_exclude.json
+base_info/disclosure_keyword_list_exclude_temp.json
+disclosure_news_list_stream.json
+disclosure_news_list_filtered.json
+disclosure_news_list_blacklisted.json
