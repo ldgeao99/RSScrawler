@@ -210,7 +210,7 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
         # 감성 표시가 1순위 시그널이라 자리를 유지하고, 해외발 기사만 그 바로 뒤에 🌐를 보조로 붙인다.
         if is_disclosure:
-            emoji = f"📢{emoji}"
+            emoji = f"{emoji}📢"
         elif is_global:
             emoji = f"{emoji}🌐"
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
