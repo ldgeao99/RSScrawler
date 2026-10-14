@@ -193,7 +193,7 @@ def shorten_telegram_link(link: str) -> str:
     return link
 
 
-def send_telegram_notification(items, is_global=False):
+def send_telegram_notification(items, is_global=False, is_disclosure=False):
     """키워드 포착된 신규 기사를 텔레그램으로 실시간 전송. 설정 없으면 조용히 스킵."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not items:
         return
@@ -209,7 +209,9 @@ def send_telegram_notification(items, is_global=False):
         link = html.escape(shorten_telegram_link(item.get("link", "")))
         emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
         # 감성 표시가 1순위 시그널이라 자리를 유지하고, 해외발 기사만 그 바로 뒤에 🌐를 보조로 붙인다.
-        if is_global:
+        if is_disclosure:
+            emoji = f"📢{emoji}"
+        elif is_global:
             emoji = f"{emoji}🌐"
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
@@ -929,6 +931,7 @@ def rss_monitor_thread(
     label="",
     is_global=False,
     cached_temp_blacklist_ref=None,
+    is_disclosure=False,
 ):
     print(f"📢 {label}RSS 실시간 백그라운드 관제 엔진이 가동되었습니다.")
 
@@ -1254,7 +1257,7 @@ def rss_monitor_thread(
                             if is_first_scan:
                                 print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
                             elif notify_items:
-                                send_telegram_notification(notify_items, is_global=is_global)
+                                send_telegram_notification(notify_items, is_global=is_global, is_disclosure=is_disclosure)
 
                         total_new_stream += len(new_stream_items)
                         total_new_filtered += len(new_filtered_items)
@@ -2215,7 +2218,7 @@ if __name__ == "__main__":
               cached_disclosure_stream, cached_disclosure_filtered, cached_disclosure_blacklisted,
               disclosure_rss_response_status, DISCLOSURE_STREAM_NEWS_FILE,
               DISCLOSURE_FILTERED_NEWS_FILE, DISCLOSURE_BLACKLISTED_NEWS_FILE, "[기업공시] "),
-        kwargs={"is_global": False, "cached_temp_blacklist_ref": cached_disclosure_temp_blacklist},
+        kwargs={"is_global": False, "is_disclosure": True, "cached_temp_blacklist_ref": cached_disclosure_temp_blacklist},
         daemon=True,
     )
     disclosure_monitor.start()
