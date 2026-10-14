@@ -1251,9 +1251,12 @@ def rss_monitor_thread(
                         print(f"    └ 📡 [{name}] 신규 기사 즉시 반영 ➔ 실시간: +{len(new_stream_items)}건 | 키워드 포착: +{len(new_filtered_items)}건")
 
                         if new_filtered_items:
-                            # 첫 스캔이든 아니든 유사기사 필터를 먼저 태워서, 재시작 직후 밀린 기사들도
-                            # recent_telegram_titles에 기록해 둔다(다음 사이클에 같은 이슈로 또 안 울리게).
-                            notify_items = filter_telegram_duplicates(new_filtered_items, recent_telegram_titles)
+                            # 공시는 제목이 비슷해도 별개 공시이므로 유사도 억제를 적용하지 않는다.
+                            # 국내/해외 뉴스는 첫 스캔에서도 기존 유사기사 기록을 유지한다.
+                            notify_items = (
+                                new_filtered_items if is_disclosure
+                                else filter_telegram_duplicates(new_filtered_items, recent_telegram_titles)
+                            )
                             if is_first_scan:
                                 print(f"🔇 [알림 스킵] 서버 재시작 직후 첫 스캔이라 {len(new_filtered_items)}건의 텔레그램 알림을 건너뜁니다.")
                             elif notify_items:
