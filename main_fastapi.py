@@ -2021,7 +2021,8 @@ async def get_disclosure_keywords(mode: str = "flat"):
     with db_lock:
         if mode == "raw": return cached_disclosure_keywords
         flat = []
-        for k in ["etc", "sector", "company_kr", "global_company", "brokerage", "performance"]:
+        # 포착 조건과 강조 대상을 일치시킨다 (긍정/부정 키워드 포함).
+        for k in KEYWORD_CATEGORY_KEYS:
             flat.extend(cached_disclosure_keywords.get(k, []))
         return flat
 
