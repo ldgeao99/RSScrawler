@@ -82,18 +82,33 @@ def _send_pending(collection):
     pending = list(collection.where('disclosureNotificationPending', '==', True).stream())
     if pending and (not token or not chat):
         raise RuntimeError('텔레그램 설정이 없어 신규 일정 알림을 보류합니다.')
-    # 실패한 알림은 다음 배치에서 재전송. 성공한 문서만 전송 완료 처리한다.
+    if not pending:
+        return
+    pending.sort(key=lambda snap: (snap.to_dict()['date'], snap.to_dict()['eventName']))
+    heading = f'📅 공시 실적발표 일정 추가 ({len(pending)}건)\n'
+    # Telegram의 4096자 제한을 넘는 경우에만 묶음을 나눈다.
+    batches = []
+    text, included = heading, []
     for snap in pending:
         event = snap.to_dict()
-        text = (f'📅 공시 실적발표 일정 추가 ({event["registeredDate"]})\n'
-                f'{event["date"]} | {event["eventName"]}\n{event["url"]}')
+        line = f'\n{event["date"]} | {event["eventName"]}'
+        if len((text + line).encode('utf-16-le')) // 2 > 4096:
+            batches.append((text, included))
+            text, included = heading, []
+        text += line
+        included.append(snap)
+    if included:
+        batches.append((text, included))
+    # 실패한 묶음은 다음 배치에서 재전송한다.
+    for text, included in batches:
         request = Request(f'https://api.telegram.org/bot{token}/sendMessage',
                           data=json.dumps({'chat_id': chat, 'text': text}).encode(),
                           headers={'Content-Type': 'application/json'})
         with urlopen(request, timeout=15) as response:
             if not json.load(response).get('ok'):
                 raise RuntimeError('텔레그램 일정 알림 전송 실패')
-        snap.reference.update({'disclosureNotificationPending': False})
+        for snap in included:
+            snap.reference.update({'disclosureNotificationPending': False})
 
 
 def extract_disclosure_schedules(items):

@@ -70,6 +70,29 @@ class DisclosureScheduleTest(unittest.TestCase):
                 extraction._send_pending(collection)
         snap.reference.update.assert_not_called()
 
+    def test_telegram_combines_events_without_links(self):
+        collection = Mock()
+        snapshots = []
+        for name, date in [('컴투스 (잠정)실적발표', '2026-11-12'), ('DL이앤씨 실적발표', '2026-10-30')]:
+            snap = Mock()
+            snap.to_dict.return_value = {'date': date, 'eventName': name, 'url': 'https://dart.fss.or.kr/example'}
+            snapshots.append(snap)
+        collection.where.return_value.stream.return_value = snapshots
+        response = Mock()
+        response.read.return_value = b'{"ok": true}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with patch.dict('os.environ', TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test'), patch.object(extraction, 'urlopen', return_value=response) as send:
+            extraction._send_pending(collection)
+        send.assert_called_once()
+        text = json.loads(send.call_args.args[0].data)['text']
+        self.assertIn('(2건)', text)
+        self.assertIn('2026-10-30 | DL이앤씨 실적발표', text)
+        self.assertIn('2026-11-12 | 컴투스 (잠정)실적발표', text)
+        self.assertNotIn('http', text)
+        for snap in snapshots:
+            snap.reference.update.assert_called_once_with({'disclosureNotificationPending': False})
+
     def test_backup_inputs_include_archives_and_all_live_feeds(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
