@@ -135,7 +135,7 @@ def extract_disclosure_schedules(items):
             raise RuntimeError('Firestore 인증이 없어 공시 일정 등록을 실행하지 못했습니다.')
         return '실적발표 대상 없음'
     from google.api_core.exceptions import AlreadyExists
-    collection = db.collection('temp_events')
+    collection = db.collection('events')
     known_urls = {snap.to_dict().get('url') for snap in
                   collection.where('disclosureSchedule', '==', True).stream()}
     added, failed = 0, 0

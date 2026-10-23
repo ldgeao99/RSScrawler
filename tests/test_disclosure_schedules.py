@@ -74,6 +74,7 @@ class DisclosureScheduleTest(unittest.TestCase):
         modules = {'google.api_core.exceptions': types.SimpleNamespace(AlreadyExists=type('AlreadyExists', (Exception,), {}))}
         with patch.dict(sys.modules, modules), patch('batch_logger._get_db', return_value=db), patch.object(extraction, 'fetch_announcement', return_value={**extraction.parse_announcement(body(), item['title'], item['link']), 'detail': '결산대상기간: 2026-07-01 ~ 2026-09-30'}), patch.object(extraction, '_send_pending') as notify:
             extraction.extract_disclosure_schedules([item, item])
+            db.collection.assert_called_once_with('events')
             self.assertEqual(ref.create.call_count, 1)
             saved = ref.create.call_args.args[0]
             self.assertTrue(saved['disclosureNotificationPending'])
