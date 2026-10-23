@@ -82,9 +82,20 @@ async def daily_backup_and_cleanup_scheduler(db_lock, file_paths, memory_caches)
         await asyncio.sleep((tomorrow - now).total_seconds())
         next_run = tomorrow + timedelta(days=1)
         try:
-            execute_midnight_processing(db_lock, file_paths, memory_caches)
-            report_batch_run('disclosure_backup_cleanup', '기업공시 백업 및 메모리 정리', next_run, True, '정상 완료')
+            await asyncio.to_thread(execute_midnight_processing, db_lock, file_paths, memory_caches)
+            # 네트워크 작업은 백업과 잠금 해제 후 별도 스레드에서 실행한다.
+            message = await asyncio.to_thread(process_earnings_schedules, file_paths)
+            report_batch_run('disclosure_backup_cleanup', '기업공시 백업 및 메모리 정리', next_run, True, message)
         except Exception as error:
             logger.exception('[기업공시] 백업 실패')
             report_batch_run('disclosure_backup_cleanup', '기업공시 백업 및 메모리 정리', next_run, False, str(error))
             await asyncio.sleep(10)
+
+
+def process_earnings_schedules(file_paths):
+    from disclosure_schedule_extraction import extract_disclosure_schedules
+    items = []
+    # 백업 전체를 포함하여 이전 배치의 등록 실패도 다음 날 재시도한다.
+    for path in list(BACKUP_DIR.glob('disclosure_news_list_*_backup_*.json')) + [Path(p) for p in file_paths.values()]:
+        items.extend(_read(path))
+    return extract_disclosure_schedules(items)
