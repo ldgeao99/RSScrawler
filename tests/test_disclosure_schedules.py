@@ -25,6 +25,14 @@ class DisclosureScheduleTest(unittest.TestCase):
             self.assertEqual(result['detail'], '')
             self.assertEqual(result['date'], '2026-10-30')
 
+    def test_provisional_keyword_variations(self):
+        for notes in ('잠정치입니다.', '잠정 실적을 발표할 예정입니다.',
+                      '이번 결산실적은 잠정치로 변경될 수 있습니다.', '잠정',
+                      '잠<span>정</span>치'):
+            with self.subTest(notes=notes):
+                result = extraction.parse_announcement(body(notes), '기업 - 결산실적공시예고', 'url')
+                self.assertEqual(result['eventName'], '기업 (잠정)실적발표')
+
     def test_missing_body_or_invalid_date_is_not_classified_as_final(self):
         for html in ('error', body(date='2026-02-30'), '<p>3. 결산실적 공시예정일 2026-10-30</p>'):
             with self.assertRaises(ValueError):
