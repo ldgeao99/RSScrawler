@@ -46,7 +46,7 @@ def parse_announcement(body, title, link):
     name = company.group(1).strip()
     provisional = '확정치가아닌잠정치' in re.sub(r'\s+', '', notes.group(1))
     event_name = f'{name} {"(잠정)" if provisional else ""}실적발표'
-    return {'date': date, 'category': '일반', 'isImportant': False,
+    return {'date': date, 'category': '한국실적', 'isImportant': False,
             'eventName': event_name, 'title': event_name, 'detail': '',
             'relatedStocks': '', 'url': link}
 
