@@ -43,11 +43,23 @@ def parse_announcement(body, title, link):
         raise ValueError('회사명, 공시예정일 또는 기타 투자판단 항목을 확인할 수 없습니다.')
     date = date_match.group(1)
     datetime.strptime(date, '%Y-%m-%d')
+    detail = ''
+    period_section = re.search(r'2\s*\.\s*결산대상기간(.*?)3\s*\.\s*결산실적', text, re.S)
+    if period_section:
+        period = re.search(r'시작일\s*(\d{4}-\d{2}-\d{2})\s*종료일\s*(\d{4}-\d{2}-\d{2})', period_section.group(1))
+        if not period:
+            raise ValueError('결산대상기간의 시작일과 종료일을 확인할 수 없습니다.')
+        start, end = period.groups()
+        datetime.strptime(start, '%Y-%m-%d')
+        datetime.strptime(end, '%Y-%m-%d')
+        if start > end:
+            raise ValueError('결산대상기간 시작일이 종료일보다 늦습니다.')
+        detail = f'결산대상기간 : {start}~{end}'
     name = company.group(1).strip()
     provisional = '잠정' in re.sub(r'\s+', '', notes.group(1))
     event_name = f'{name} {"(잠정)" if provisional else ""}실적발표'
     return {'date': date, 'category': '한국실적', 'isImportant': False,
-            'eventName': event_name, 'title': event_name, 'detail': '',
+            'eventName': event_name, 'title': event_name, 'detail': detail,
             'relatedStocks': '', 'url': link}
 
 

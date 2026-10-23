@@ -25,6 +25,21 @@ class DisclosureScheduleTest(unittest.TestCase):
             self.assertEqual(result['detail'], '')
             self.assertEqual(result['date'], '2026-10-30')
 
+    def test_accounting_period_in_detail(self):
+        period = '<tr><td>2. 결산대상기간</td><td>시작일</td><td>2026-07-01</td><td>종료일</td><td>2026-09-30</td></tr>'
+        html = body('잠정 실적').replace('<table>', '<table>' + period)
+        result = extraction.parse_announcement(html, '기업 - 결산실적공시예고', 'url')
+        self.assertEqual(result['detail'], '결산대상기간 : 2026-07-01~2026-09-30')
+        self.assertEqual(result['date'], '2026-10-30')
+        self.assertEqual(result['category'], '한국실적')
+
+    def test_invalid_accounting_period_is_rejected(self):
+        for start, end in [('2026-02-30', '2026-09-30'), ('2026-10-01', '2026-09-30'), ('-', '2026-09-30')]:
+            with self.subTest(start=start, end=end):
+                html = body().replace('<table>', f'<table><tr><td>2. 결산대상기간</td><td>시작일</td><td>{start}</td><td>종료일</td><td>{end}</td></tr>')
+                with self.assertRaises(ValueError):
+                    extraction.parse_announcement(html, '기업 - 결산실적공시예고', 'url')
+
     def test_provisional_keyword_variations(self):
         for notes in ('잠정치입니다.', '잠정 실적을 발표할 예정입니다.',
                       '이번 결산실적은 잠정치로 변경될 수 있습니다.', '잠정',
@@ -57,12 +72,12 @@ class DisclosureScheduleTest(unittest.TestCase):
         db = Mock()
         db.collection.return_value = collection
         modules = {'google.api_core.exceptions': types.SimpleNamespace(AlreadyExists=type('AlreadyExists', (Exception,), {}))}
-        with patch.dict(sys.modules, modules), patch('batch_logger._get_db', return_value=db), patch.object(extraction, 'fetch_announcement', return_value=extraction.parse_announcement(body(), item['title'], item['link'])), patch.object(extraction, '_send_pending') as notify:
+        with patch.dict(sys.modules, modules), patch('batch_logger._get_db', return_value=db), patch.object(extraction, 'fetch_announcement', return_value={**extraction.parse_announcement(body(), item['title'], item['link']), 'detail': '결산대상기간 : 2026-07-01~2026-09-30'}), patch.object(extraction, '_send_pending') as notify:
             extraction.extract_disclosure_schedules([item, item])
             self.assertEqual(ref.create.call_count, 1)
             saved = ref.create.call_args.args[0]
             self.assertTrue(saved['disclosureNotificationPending'])
-            self.assertEqual(saved['detail'], '')
+            self.assertEqual(saved['detail'], '결산대상기간 : 2026-07-01~2026-09-30')
             notify.assert_called_once_with(collection)
             ref.get.return_value.exists = True
             extraction.extract_disclosure_schedules([item])
