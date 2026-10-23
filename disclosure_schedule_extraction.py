@@ -54,7 +54,7 @@ def parse_announcement(body, title, link):
         datetime.strptime(end, '%Y-%m-%d')
         if start > end:
             raise ValueError('결산대상기간 시작일이 종료일보다 늦습니다.')
-        detail = f'결산대상기간 : {start}~{end}'
+        detail = f'결산대상기간: {start} ~ {end}'
     name = company.group(1).strip()
     provisional = '잠정' in re.sub(r'\s+', '', notes.group(1))
     event_name = f'{name} {"(잠정)" if provisional else ""}실적발표'

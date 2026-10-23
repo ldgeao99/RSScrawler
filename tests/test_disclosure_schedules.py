@@ -29,7 +29,7 @@ class DisclosureScheduleTest(unittest.TestCase):
         period = '<tr><td>2. 결산대상기간</td><td>시작일</td><td>2026-07-01</td><td>종료일</td><td>2026-09-30</td></tr>'
         html = body('잠정 실적').replace('<table>', '<table>' + period)
         result = extraction.parse_announcement(html, '기업 - 결산실적공시예고', 'url')
-        self.assertEqual(result['detail'], '결산대상기간 : 2026-07-01~2026-09-30')
+        self.assertEqual(result['detail'], '결산대상기간: 2026-07-01 ~ 2026-09-30')
         self.assertEqual(result['date'], '2026-10-30')
         self.assertEqual(result['category'], '한국실적')
 
@@ -72,12 +72,12 @@ class DisclosureScheduleTest(unittest.TestCase):
         db = Mock()
         db.collection.return_value = collection
         modules = {'google.api_core.exceptions': types.SimpleNamespace(AlreadyExists=type('AlreadyExists', (Exception,), {}))}
-        with patch.dict(sys.modules, modules), patch('batch_logger._get_db', return_value=db), patch.object(extraction, 'fetch_announcement', return_value={**extraction.parse_announcement(body(), item['title'], item['link']), 'detail': '결산대상기간 : 2026-07-01~2026-09-30'}), patch.object(extraction, '_send_pending') as notify:
+        with patch.dict(sys.modules, modules), patch('batch_logger._get_db', return_value=db), patch.object(extraction, 'fetch_announcement', return_value={**extraction.parse_announcement(body(), item['title'], item['link']), 'detail': '결산대상기간: 2026-07-01 ~ 2026-09-30'}), patch.object(extraction, '_send_pending') as notify:
             extraction.extract_disclosure_schedules([item, item])
             self.assertEqual(ref.create.call_count, 1)
             saved = ref.create.call_args.args[0]
             self.assertTrue(saved['disclosureNotificationPending'])
-            self.assertEqual(saved['detail'], '결산대상기간 : 2026-07-01~2026-09-30')
+            self.assertEqual(saved['detail'], '결산대상기간: 2026-07-01 ~ 2026-09-30')
             notify.assert_called_once_with(collection)
             ref.get.return_value.exists = True
             extraction.extract_disclosure_schedules([item])
