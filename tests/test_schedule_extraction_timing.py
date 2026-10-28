@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 def scheduler_namespace():
     tree = ast.parse((Path(__file__).resolve().parents[1] / 'schedule_extraction_scheduler.py').read_text())
     functions = {'get_live_file_paths', 'get_file_paths_for_date_str', 'load_news_snapshot',
-                 'daily_schedule_extraction_scheduler'}
+                 'daily_schedule_extraction_scheduler', 'main'}
     constants = {'SCHEDULE_EXTRACTION_RUN_HOUR', 'SCHEDULE_EXTRACTION_RUN_MINUTE'}
     nodes = [node for node in tree.body
              if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in functions
@@ -27,6 +27,31 @@ def scheduler_namespace():
 
 
 class ScheduleExtractionTimingTest(unittest.TestCase):
+    def test_pipeline_live_input_filters_today_but_selected_backup_keeps_all(self):
+        ns = scheduler_namespace()
+        today = datetime(2026, 10, 28, tzinfo=timezone(timedelta(hours=9)))
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return today.astimezone(tz)
+
+        ns['datetime'] = Clock
+        items = [dict(title=name, timestamp=str((today + delta).timestamp()))
+                 for name, delta in [('yesterday', timedelta(seconds=-1)),
+                                     ('start', timedelta()),
+                                     ('end', timedelta(hours=23, minutes=59, seconds=59)),
+                                     ('tomorrow', timedelta(days=1))]]
+        items += [{'title': 'unknown'}, {'timestamp': 'invalid'}, {'timestamp': 'nan'}]
+        # AI 호출 직전에서 멈추고 실제 파이프라인에 전달한 뉴스를 검사한다.
+        ns['process_duplicate_purge_pipeline'] = Mock(side_effect=RuntimeError('stop before AI'))
+        ns['get_live_file_paths'] = Mock(return_value=('live.json', 'output.json'))
+        with patch('builtins.open', unittest.mock.mock_open(read_data=json.dumps(items))):
+            for args in ({}, {'input_file': 'backup.json', 'output_file': 'backup_output.json'}):
+                with self.subTest(args=args):
+                    asyncio.run(ns['main'](**args))
+                    ns['process_duplicate_purge_pipeline'].assert_called_with(items if args else items[1:3])
+
     def test_default_input_is_live_and_output_uses_kst_date(self):
         ns = scheduler_namespace()
         clock = Mock()

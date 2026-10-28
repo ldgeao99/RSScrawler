@@ -36,11 +36,24 @@ def get_live_file_paths():
     return "news_list_filtered.json", f"extracted_schedule/extracted_schedules_{today}.json"
 
 
-def load_news_snapshot(input_file, db_lock=None):
+def load_news_snapshot(input_file, db_lock=None, only_today=False):
+    kst_tz = timezone(timedelta(hours=9))
+    today = datetime.now(kst_tz).date() if only_today else None
     # 수집 스레드의 파일 교체/쓰기 중간을 읽지 않는다. AI 처리 전 잠금을 해제한다.
     with db_lock if db_lock is not None else nullcontext():
         with open(input_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+            items = json.load(f)
+    if not only_today:
+        return items
+    selected = []
+    for item in items:
+        try:
+            article_date = datetime.fromtimestamp(float(item['timestamp']), kst_tz).date()
+        except (KeyError, ValueError, TypeError, OverflowError, OSError):
+            continue
+        if article_date == today:
+            selected.append(item)
+    return selected
 
 # ==========================================================
 # 🔥 Firebase(Firestore) 연동 설정
@@ -527,6 +540,8 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
 # ==========================================================
 async def main(input_file: str = None, output_file: str = None, db_lock=None):
     """반환값: (success: bool, message: str) - 배치 로그 기록용 실행 결과 요약."""
+    # 자동/날짜 없는 수동 실행만 원본의 오늘 뉴스로 제한한다.
+    use_live_input = input_file is None
     if not input_file or not output_file:
         default_input, default_output = get_live_file_paths()
         input_file = input_file or default_input
@@ -535,9 +550,11 @@ async def main(input_file: str = None, output_file: str = None, db_lock=None):
     logger.info("🧪 하이브리드 [OpenAI + Gemini] 3단계 뉴스 정제 파이프라인 가동")
 
     try:
-        raw_data = load_news_snapshot(input_file, db_lock)
+        raw_data = load_news_snapshot(input_file, db_lock, only_today=use_live_input)
         total_raw_count = len(raw_data)
         logger.info(f"📂 뉴스 로드 성공: '{input_file}' (총 {total_raw_count}건)")
+        if use_live_input:
+            logger.info("📅 KST 오늘 날짜 뉴스만 추출 대상으로 사용합니다.")
 
         # 1차 단계: 중복 제거 파이프라인 구동
         purged_data = process_duplicate_purge_pipeline(raw_data)
@@ -616,8 +633,8 @@ async def main(input_file: str = None, output_file: str = None, db_lock=None):
         return True, f"원본 {total_raw_count}건 → 추출 {len(final_schedule_results)}건 저장 완료"
 
     except FileNotFoundError:
-        logger.error(f"❌ 백업 파일을 찾을 수 없습니다: '{input_file}'")
-        return False, f"백업 파일을 찾을 수 없음: '{input_file}'"
+        logger.error(f"❌ 뉴스 입력 파일을 찾을 수 없습니다: '{input_file}'")
+        return False, f"뉴스 입력 파일을 찾을 수 없음: '{input_file}'"
     except Exception as e:
         logger.error(f"❌ 파이프라인 가동 중 치명적 예외 발생: {e}")
         return False, f"파이프라인 가동 중 예외 발생: {e}"
