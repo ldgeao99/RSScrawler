@@ -7,6 +7,7 @@ import re
 import urllib.request
 import requests
 from datetime import datetime, timezone, timedelta
+from contextlib import nullcontext
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -28,15 +29,18 @@ def get_file_paths_for_date_str(date_str: str):
     return input_file, output_file
 
 
-def get_yesterday_file_paths():
-    """
-    전일(어제, KST 기준) 날짜의 백업 파일을 입력으로, 같은 날짜의 산출 파일 경로를 반환한다.
-    back_up_scheduler.py가 자정에 'news_list_filtered_backup_YYMMDD.json'을 만들어두므로,
-    이 파이프라인은 항상 '어제' 날짜 백업을 대상으로 실행된다.
-    """
+def get_live_file_paths():
+    """원본 포착 뉴스와 실행일(KST) 기준 산출 파일 경로를 반환한다."""
     kst_tz = timezone(timedelta(hours=9))
-    yesterday = datetime.now(kst_tz) - timedelta(days=1)
-    return get_file_paths_for_date_str(yesterday.strftime("%y%m%d"))
+    today = datetime.now(kst_tz).strftime("%y%m%d")
+    return "news_list_filtered.json", f"extracted_schedule/extracted_schedules_{today}.json"
+
+
+def load_news_snapshot(input_file, db_lock=None):
+    # 수집 스레드의 파일 교체/쓰기 중간을 읽지 않는다. AI 처리 전 잠금을 해제한다.
+    with db_lock if db_lock is not None else nullcontext():
+        with open(input_file, "r", encoding="utf-8") as f:
+            return json.load(f)
 
 # ==========================================================
 # 🔥 Firebase(Firestore) 연동 설정
@@ -521,20 +525,19 @@ async def extract_schedule_from_body_gemini(gemini_client: genai.Client, news: d
 # ==========================================================
 # 🚀 통합 제어 메인 오케스트레이터
 # ==========================================================
-async def main(input_file: str = None, output_file: str = None):
+async def main(input_file: str = None, output_file: str = None, db_lock=None):
     """반환값: (success: bool, message: str) - 배치 로그 기록용 실행 결과 요약."""
     if not input_file or not output_file:
-        default_input, default_output = get_yesterday_file_paths()
+        default_input, default_output = get_live_file_paths()
         input_file = input_file or default_input
         output_file = output_file or default_output
 
     logger.info("🧪 하이브리드 [OpenAI + Gemini] 3단계 뉴스 정제 파이프라인 가동")
 
     try:
-        with open(input_file, "r", encoding="utf-8") as f:
-            raw_data = json.load(f)
+        raw_data = load_news_snapshot(input_file, db_lock)
         total_raw_count = len(raw_data)
-        logger.info(f"📂 백업 로드 성공: '{input_file}' (총 {total_raw_count}건)")
+        logger.info(f"📂 뉴스 로드 성공: '{input_file}' (총 {total_raw_count}건)")
 
         # 1차 단계: 중복 제거 파이프라인 구동
         purged_data = process_duplicate_purge_pipeline(raw_data)
@@ -621,16 +624,14 @@ async def main(input_file: str = None, output_file: str = None):
 
 
 # ==========================================================
-# ⏰ [배치 스케줄러] 매일 00시 이후 자동 실행
+# ⏰ [배치 스케줄러] 매일 22:00 KST 원본 뉴스로 자동 실행
 # ==========================================================
-# back_up_scheduler.py가 00:00:00 KST 정각에 전일 백업 파일을 만든다.
-# 이 파이프라인은 그 백업 파일을 입력으로 쓰므로, 백업이 끝났다고 안전하게 확신할 수 있도록
-# 정각과 겹치지 않게 15분 뒤(00:15:00 KST)로 실행 시각을 잡는다.
-SCHEDULE_EXTRACTION_RUN_HOUR = 0
-SCHEDULE_EXTRACTION_RUN_MINUTE = 15
+# 자정 백업 스케줄러와 독립적으로 실행한다.
+SCHEDULE_EXTRACTION_RUN_HOUR = 22
+SCHEDULE_EXTRACTION_RUN_MINUTE = 0
 
 
-async def daily_schedule_extraction_scheduler():
+async def daily_schedule_extraction_scheduler(db_lock=None):
     logger.info("⏰ 일별 자동 일정 추출 스케줄러가 독립 모듈에서 가동되었습니다.")
 
     while True:
@@ -650,7 +651,7 @@ async def daily_schedule_extraction_scheduler():
 
         next_run_at = target + timedelta(days=1)
         try:
-            success, message = await main()
+            success, message = await main(db_lock=db_lock)
             report_batch_run("schedule_extraction", "일정 자동 추출", next_run_at, success, message)
             send_batch_telegram_notification(success, message)
         except Exception as e:

@@ -2286,8 +2286,8 @@ if __name__ == "__main__":
             )
         )
 
-        # 일정 추출 파이프라인 스케줄러 등록 (백업 스케줄러와 실행 시각 안 겹치게 00:15 KST)
-        asyncio.create_task(schedule_extraction_scheduler.daily_schedule_extraction_scheduler())
+        # 원본 뉴스에서 임시일정 추출: 매일 22:00 KST, 자정 백업과 독립 실행
+        asyncio.create_task(schedule_extraction_scheduler.daily_schedule_extraction_scheduler(db_lock=db_lock))
         logger.info("⚡ [엔진 직결] Uvicorn 루프에 일정 추출 스케줄러 비동기 태스크 등록을 완료했습니다.")
 
         # 상장사 기업명 동기화 스케줄러 등록 (앞의 둘과 안 겹치게 01:00 KST)
