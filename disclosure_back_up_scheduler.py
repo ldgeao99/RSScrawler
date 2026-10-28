@@ -117,12 +117,42 @@ async def weekday_earnings_schedule_scheduler(db_lock, file_paths):
             report_batch_run('disclosure_earnings_schedules', '공시 실적발표 일정 등록', next_run, False, str(error))
 
 
-def process_earnings_schedules(file_paths, db_lock=None):
+def process_earnings_schedules(file_paths, db_lock=None, date_str=None):
     from disclosure_schedule_extraction import extract_disclosure_schedules
-    items = []
+    if date_str is not None:
+        if len(date_str) != 6 or not date_str.isascii() or not date_str.isdigit():
+            raise ValueError('날짜는 YYMMDD 형식이어야 합니다.')
+        selected_date = datetime.strptime(date_str, '%y%m%d').date()
+        path = BACKUP_DIR / f'disclosure_news_list_filtered_backup_{selected_date:%y%m%d}.json'
+        if not path.is_file():
+            raise FileNotFoundError(f'포착 공시 백업 파일이 없습니다: {path}')
+    else:
+        selected_date = datetime.now(KST).date()
+        path = Path(file_paths['filtered'])
     # 파일 읽기만 잠그고, DART/Firestore/Telegram 네트워크 작업은 잠금 밖에서 수행한다.
     with db_lock if db_lock is not None else nullcontext():
-        # 백업 전체를 포함하여 이전 배치의 등록 실패도 다음 실행에 재시도한다.
-        for path in list(BACKUP_DIR.glob('disclosure_news_list_*_backup_*.json')) + [Path(p) for p in file_paths.values()]:
-            items.extend(_read(path))
+        items = _read(path)
+    if date_str is None:
+        # 원본에는 최근 이틀치가 있으므로 KST 오늘 공시만 처리한다.
+        items = [item for item in items if _item_date(item) == selected_date]
+    logger.info('[기업공시] 실적발표 일정 입력: %s (%s건, 기준일 %s)', path, len(items), selected_date)
     return extract_disclosure_schedules(items)
+
+
+def run_from_cli(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(description='포착 공시에서 실적발표 일정 등록')
+    parser.add_argument('date', nargs='?', help='YYMMDD: 지정일 포착 공시 백업. 생략하면 원본의 KST 오늘 공시')
+    args = parser.parse_args(argv)
+    if args.date is not None:
+        try:
+            if len(args.date) != 6 or not args.date.isascii() or not args.date.isdigit():
+                raise ValueError
+            datetime.strptime(args.date, '%y%m%d')
+        except ValueError:
+            parser.error('날짜는 유효한 YYMMDD 형식이어야 합니다.')
+    print(process_earnings_schedules({'filtered': 'disclosure_news_list_filtered.json'}, date_str=args.date))
+
+
+if __name__ == '__main__':
+    run_from_cli()

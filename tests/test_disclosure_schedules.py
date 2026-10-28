@@ -4,6 +4,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import disclosure_schedule_extraction as extraction
@@ -117,13 +118,53 @@ class DisclosureScheduleTest(unittest.TestCase):
         for snap in snapshots:
             snap.reference.update.assert_called_once_with({'disclosureNotificationPending': False})
 
-    def test_backup_inputs_include_archives_and_all_live_feeds(self):
+    def test_auto_reads_only_today_kst_from_live_filtered_feed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             archive = root / 'disclosure_news_list_stream_backup_261023.json'
-            archive.write_text(json.dumps([{'title': 'archived'}]))
+            archive.write_text('invalid JSON must not be read')
             live = root / 'filtered.json'
-            live.write_text(json.dumps([{'title': 'live'}]))
+            today = datetime(2026, 10, 28, tzinfo=backup.KST)
+            items = [dict(title=label, timestamp=(today + delta).timestamp()) for label, delta in
+                     [('yesterday', timedelta(seconds=-1)), ('today start', timedelta()),
+                      ('today end', timedelta(hours=23, minutes=59, seconds=59)),
+                      ('tomorrow', timedelta(days=1))]]
+            items.extend([{'title': 'unknown'}, {'timestamp': 'bad'}])
+            live.write_text(json.dumps(items))
+            clock = Mock(wraps=datetime)
+            # UTC 전날 15시가 KST 오늘의 시작이다.
+            clock.now.side_effect = lambda tz: datetime(2026, 10, 27, 15, tzinfo=timezone.utc).astimezone(tz)
+            with patch.object(backup, 'datetime', clock), patch.object(backup, 'BACKUP_DIR', root), patch.object(extraction, 'extract_disclosure_schedules', return_value='ok') as extract:
+                self.assertEqual(backup.process_earnings_schedules(
+                    {'filtered': str(live), 'stream': str(archive), 'blacklisted': str(archive)}), 'ok')
+                extract.assert_called_once_with(items[1:3])
+
+    def test_manual_reads_only_selected_filtered_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            items = [{'title': 'selected backup'}]
+            (root / 'disclosure_news_list_filtered_backup_261027.json').write_text(json.dumps(items))
+            for name in ('disclosure_news_list_filtered_backup_261026.json',
+                         'disclosure_news_list_stream_backup_261027.json',
+                         'disclosure_news_list_blacklisted_backup_261027.json'):
+                (root / name).write_text('must not read')
             with patch.object(backup, 'BACKUP_DIR', root), patch.object(extraction, 'extract_disclosure_schedules', return_value='ok') as extract:
-                self.assertEqual(backup.process_earnings_schedules({'filtered': str(live)}), 'ok')
-                self.assertEqual(len(extract.call_args.args[0]), 2)
+                self.assertEqual(backup.process_earnings_schedules({}, date_str='261027'), 'ok')
+                extract.assert_called_once_with(items)
+                with self.assertRaises(FileNotFoundError):
+                    backup.process_earnings_schedules({}, date_str='261025')
+
+    def test_manual_rejects_invalid_dates_before_extraction(self):
+        with patch.object(extraction, 'extract_disclosure_schedules') as extract:
+            for value in ('261032', '260229', '../foo', '20261028', '26101'):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    backup.process_earnings_schedules({}, date_str=value)
+            extract.assert_not_called()
+
+    def test_manual_command_passes_date_or_uses_live_default(self):
+        with patch.object(backup, 'process_earnings_schedules', return_value='ok') as process, patch('builtins.print'):
+            backup.run_from_cli(['261027'])
+            process.assert_called_once_with({'filtered': 'disclosure_news_list_filtered.json'}, date_str='261027')
+            process.reset_mock()
+            backup.run_from_cli([])
+            process.assert_called_once_with({'filtered': 'disclosure_news_list_filtered.json'}, date_str=None)
