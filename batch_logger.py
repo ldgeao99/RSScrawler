@@ -21,6 +21,7 @@ KST = timezone(timedelta(hours=9))
 BATCH_ORDER = {
     "backup_cleanup": 0,
     "disclosure_backup_cleanup": 0.5,
+    "disclosure_earnings_schedules": 0.75,
     "schedule_extraction": 1,
     "company_sync": 2,
 }

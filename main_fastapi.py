@@ -2279,6 +2279,13 @@ if __name__ == "__main__":
             )
         )
 
+        asyncio.create_task(
+            disclosure_back_up_scheduler.weekday_earnings_schedule_scheduler(
+                db_lock=db_lock,
+                file_paths=FILE_PATHS_CONFIG_DISCLOSURE,
+            )
+        )
+
         # 일정 추출 파이프라인 스케줄러 등록 (백업 스케줄러와 실행 시각 안 겹치게 00:15 KST)
         asyncio.create_task(schedule_extraction_scheduler.daily_schedule_extraction_scheduler())
         logger.info("⚡ [엔진 직결] Uvicorn 루프에 일정 추출 스케줄러 비동기 태스크 등록을 완료했습니다.")

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from collections import defaultdict
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -83,19 +84,45 @@ async def daily_backup_and_cleanup_scheduler(db_lock, file_paths, memory_caches)
         next_run = tomorrow + timedelta(days=1)
         try:
             await asyncio.to_thread(execute_midnight_processing, db_lock, file_paths, memory_caches)
-            # 네트워크 작업은 백업과 잠금 해제 후 별도 스레드에서 실행한다.
-            message = await asyncio.to_thread(process_earnings_schedules, file_paths)
-            report_batch_run('disclosure_backup_cleanup', '기업공시 백업 및 메모리 정리', next_run, True, message)
+            report_batch_run('disclosure_backup_cleanup', '기업공시 백업 및 메모리 정리', next_run, True, '백업 및 정리 완료')
         except Exception as error:
             logger.exception('[기업공시] 백업 실패')
             report_batch_run('disclosure_backup_cleanup', '기업공시 백업 및 메모리 정리', next_run, False, str(error))
             await asyncio.sleep(10)
 
 
-def process_earnings_schedules(file_paths):
+def next_earnings_schedule_run(now):
+    """현재 시각 이후의 월~금 22:00 KST를 반환한다."""
+    now = now.astimezone(KST)
+    target = now.replace(hour=22, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:
+        target += timedelta(days=1)
+    return target
+
+
+async def weekday_earnings_schedule_scheduler(db_lock, file_paths):
+    logger.info('⏰ [기업공시] 월~금 22:00 KST 실적발표 일정 등록 스케줄러 시작')
+    while True:
+        now = datetime.now(KST)
+        target = next_earnings_schedule_run(now)
+        await asyncio.sleep((target - now).total_seconds())
+        next_run = next_earnings_schedule_run(datetime.now(KST))
+        try:
+            message = await asyncio.to_thread(process_earnings_schedules, file_paths, db_lock)
+            report_batch_run('disclosure_earnings_schedules', '공시 실적발표 일정 등록', next_run, True, message)
+        except Exception as error:
+            logger.exception('[기업공시] 실적발표 일정 등록 실패')
+            report_batch_run('disclosure_earnings_schedules', '공시 실적발표 일정 등록', next_run, False, str(error))
+
+
+def process_earnings_schedules(file_paths, db_lock=None):
     from disclosure_schedule_extraction import extract_disclosure_schedules
     items = []
-    # 백업 전체를 포함하여 이전 배치의 등록 실패도 다음 날 재시도한다.
-    for path in list(BACKUP_DIR.glob('disclosure_news_list_*_backup_*.json')) + [Path(p) for p in file_paths.values()]:
-        items.extend(_read(path))
+    # 파일 읽기만 잠그고, DART/Firestore/Telegram 네트워크 작업은 잠금 밖에서 수행한다.
+    with db_lock if db_lock is not None else nullcontext():
+        # 백업 전체를 포함하여 이전 배치의 등록 실패도 다음 실행에 재시도한다.
+        for path in list(BACKUP_DIR.glob('disclosure_news_list_*_backup_*.json')) + [Path(p) for p in file_paths.values()]:
+            items.extend(_read(path))
     return extract_disclosure_schedules(items)
