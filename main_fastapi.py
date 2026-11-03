@@ -30,6 +30,7 @@ import disclosure_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
 import batch_logger
+from disclosure_earnings_alert import build_earnings_alert
 
 from fastapi import FastAPI, Body, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -216,6 +217,12 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
         text = f'{emoji} {title}\n\n{link}\n​'
+
+        if is_disclosure:
+            try:
+                text = build_earnings_alert(item) or text
+            except Exception as error:
+                logger.warning('잠정실적 알림 보강 실패, 기존 공시 알림 사용: %s', error)
 
         try:
             resp = requests.post(
