@@ -227,7 +227,7 @@ def format_earnings(earnings, link, code=None, wise=None):
         expected = wise.get('consensus', {}).get(metric)
         lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{_surprise(actual, expected)})')
     basis = '연결' if earnings['consolidated'] else '별도'
-    lines += ['', f'<b>최근 실적 추이({basis}기준)</b>', '매출액 / 영업익 / 당기순이익']
+    lines += ['', f'최근 실적 추이({basis}기준)', '매출액 / 영업익 / 당기순이익']
     period = earnings['period']
     for offset in range(5):
         ordinal = period[0] * 4 + period[1] - 1 - offset
