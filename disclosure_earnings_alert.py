@@ -241,7 +241,7 @@ def format_earnings(earnings, link, code=None, wise=None):
             lines.append(f"※ 시가총액 기준일: {wise['market_date']}")
     lines += ['', '공시링크:', escape(link)]
     if code:
-        history_link = 'https://comp.wisereport.co.kr/company/c1010001.aspx?' + urlencode({'cn': '', 'cmp_cd': code})
+        history_link = 'https://comp.wisereport.co.kr/company/c1050001.aspx?' + urlencode({'cn': '', 'cmp_cd': code})
         lines += ['과거실적:', escape(history_link)]
     return '\n'.join(lines)
 
