@@ -203,9 +203,12 @@ def _amount(value):
 
 
 def _surprise(actual, expected):
-    if actual is None or expected is None or expected <= 0:
+    if actual is None or expected is None or expected == 0:
         return ''
-    difference = ((actual / expected - 1) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    # 적자 예상도 개선은 +, 악화는 -로 표시한다.
+    difference = ((actual - expected) / abs(expected) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    if difference == 0:
+        difference = abs(difference)
     return f' / {difference:+.0f}%'
 
 

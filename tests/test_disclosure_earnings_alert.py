@@ -131,9 +131,25 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertNotIn('과거실적:', message)
         earnings['consolidated'] = False
         self.assertIn('최근 실적 추이(별도기준)', alert.format_earnings(earnings, LINK))
-        self.assertEqual(alert._surprise(Decimal(-10), Decimal(-5)), '')
+        self.assertEqual(alert._surprise(Decimal(-10), Decimal(-5)), ' / -100%')
         self.assertEqual(alert._surprise(Decimal(10), Decimal(0)), '')
         self.assertEqual(alert._amount(Decimal('-1.5')), '-2억')
+
+    def test_surprise_sign_for_losses_profit_transitions_and_missing_estimates(self):
+        for actual, expected, result in [
+            ('691', '764', ' / -10%'),
+            ('-263', '-259', ' / -2%'),
+            ('-140', '-319', ' / +56%'),
+            ('10', '-10', ' / +200%'),
+            ('-10', '10', ' / -200%'),
+            ('-259', '-259', ' / +0%'),
+            ('99.99', '100', ' / +0%'),
+        ]:
+            with self.subTest(actual=actual, expected=expected):
+                self.assertEqual(alert._surprise(Decimal(actual), Decimal(expected)), result)
+        self.assertEqual(alert._surprise(None, Decimal('-10')), '')
+        self.assertEqual(alert._surprise(Decimal('-10'), None), '')
+        self.assertEqual(alert._surprise(Decimal('-10'), Decimal(0)), '')
 
     def test_telegram_dispatch_preserves_original_alert_on_failure_and_other_feeds(self):
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'main_fastapi.py').read_text())
