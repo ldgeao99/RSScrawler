@@ -220,7 +220,9 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
 
         if is_disclosure:
             try:
-                text = build_earnings_alert(item) or text
+                earnings_text = build_earnings_alert(item)
+                if earnings_text:
+                    text = f'{emoji}{earnings_text}'
             except Exception as error:
                 logger.warning('잠정실적 알림 보강 실패, 기존 공시 알림 사용: %s', error)
 

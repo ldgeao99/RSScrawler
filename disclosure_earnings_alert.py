@@ -4,7 +4,7 @@ import html
 import json
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar
@@ -14,7 +14,6 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 logger = logging.getLogger('news_logger')
 MAP_FILE = Path('base_info/company_stock_map.json')
-KST = timezone(timedelta(hours=9))
 METRICS = ('revenue', 'operating_profit', 'net_income')
 LABELS = dict(zip(METRICS, ('매출액', '영업익', '순이익')))
 
@@ -213,29 +212,37 @@ def _surprise(actual, expected):
 def format_earnings(earnings, link, code=None, wise=None):
     wise = wise or {}
     escape = html.escape
-    heading = f"기업명: {escape(earnings['company'])}"
+    heading = f"{escape(earnings['company'])} - {escape(earnings['report'])}"
+    details = []
     if wise.get('market_cap') is not None:
-        heading += f"(시가총액: {_amount(wise['market_cap'])})"
+        details.append(f"(시가총액: {_amount(wise['market_cap'])})")
     if code:
-        heading += f' A{code}'
-    lines = [heading, f"보고서명: {escape(earnings['report'])}", '']
+        details.append(f'A{code}')
+    lines = [heading]
+    if details:
+        lines.append(' '.join(details))
+    lines.append('')
     for metric in METRICS:
         actual = earnings['actual'][metric]
         expected = wise.get('consensus', {}).get(metric)
         lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{_surprise(actual, expected)})')
-    lines += ['', '<b>최근 실적 추이</b>', '매출액 / 영업익 / 당기순이익']
+    basis = '연결' if earnings['consolidated'] else '별도'
+    lines += ['', f'<b>최근 실적 추이({basis}기준)</b>', '매출액 / 영업익 / 당기순이익']
     period = earnings['period']
     for offset in range(5):
         ordinal = period[0] * 4 + period[1] - 1 - offset
         previous = (ordinal // 4, ordinal % 4 + 1)
         values = earnings['actual'] if offset == 0 else wise.get('history', {}).get(previous, {})
         lines.append(f'{previous[0]}.{previous[1]}Q ' + ' / '.join(_amount(values.get(m)) for m in METRICS))
-    lines += ['', '※ ' + ('연결' if earnings['consolidated'] else '별도') + ' 기준 · 순이익은 전체 당기순이익']
+    lines.append('')
     if wise:
-        lines.append(f"※ 예상치: WiseReport 조회 시점({datetime.now(KST):%Y-%m-%d %H:%M} KST)")
+        lines.append('※ 예상치: WiseReport 기준')
         if wise.get('market_date') and wise.get('market_cap') is not None:
             lines.append(f"※ 시가총액 기준일: {wise['market_date']}")
-    lines += ['', f'공시링크: {escape(link)}']
+    lines += ['', '공시링크:', escape(link)]
+    if code:
+        history_link = 'https://comp.wisereport.co.kr/company/c1010001.aspx?' + urlencode({'cn': '', 'cmp_cd': code})
+        lines += ['과거실적:', escape(history_link)]
     return '\n'.join(lines)
 
 

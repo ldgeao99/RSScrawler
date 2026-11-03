@@ -95,6 +95,16 @@ class EarningsAlertTest(unittest.TestCase):
                          '2026.2Q 1,154억 / 54억 / 69억',
                          '2025.4Q 1,752억 / 274억 / 134억', LINK):
             self.assertIn(expected, message)
+        self.assertTrue(message.startswith(
+            '하나투어 - 연결재무제표기준영업(잠정)실적(공정공시)\n(시가총액: 4,306억) A039130\n\n'))
+        self.assertIn('<b>최근 실적 추이(연결기준)</b>', message)
+        self.assertIn('※ 예상치: WiseReport 기준\n※ 시가총액 기준일: 2026.11.02', message)
+        self.assertIn('공시링크:\n' + LINK, message)
+        self.assertTrue(html.unescape(message).endswith(
+            '과거실적:\nhttps://comp.wisereport.co.kr/company/c1010001.aspx?cn=&cmp_cd=039130'))
+        self.assertNotIn('조회 시점', message)
+        self.assertNotIn('기업명:', message)
+        self.assertNotIn('보고서명:', message)
         with patch.object(alert, '_fetch', side_effect=[MAIN, BODY]), \
                 patch.object(alert, 'find_stock_code', side_effect=FileNotFoundError):
             message = alert.build_earnings_alert(ITEM)
@@ -117,6 +127,9 @@ class EarningsAlertTest(unittest.TestCase):
         message = alert.format_earnings(earnings, LINK)
         self.assertIn(html.escape('기업<&>'), message)
         self.assertIn('2025.4Q - / - / -', message)
+        self.assertNotIn('과거실적:', message)
+        earnings['consolidated'] = False
+        self.assertIn('최근 실적 추이(별도기준)', alert.format_earnings(earnings, LINK))
         self.assertEqual(alert._surprise(Decimal(-10), Decimal(-5)), '')
         self.assertEqual(alert._surprise(Decimal(10), Decimal(0)), '')
         self.assertEqual(alert._amount(Decimal('-1.5')), '-2억')
@@ -129,12 +142,15 @@ class EarningsAlertTest(unittest.TestCase):
         request.post.return_value.status_code = 200
         builder = Mock(return_value='rich earnings')
         namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', html=html,
-                         shorten_telegram_link=lambda link: link, SENTIMENT_EMOJI={},
+                         shorten_telegram_link=lambda link: link,
+                         SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
                          build_earnings_alert=builder, requests=request, time=Mock(), logger=Mock())
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<dispatch>', 'exec'), namespace)
         send = namespace['send_telegram_notification']
-        send([ITEM], is_disclosure=True)
-        self.assertEqual(request.post.call_args.kwargs['json']['text'], 'rich earnings')
+        send([{**ITEM, 'sentiment': 'positive'}], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['text'], '🟢📢rich earnings')
+        send([{**ITEM, 'sentiment': 'negative'}], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['text'], '🔴📢rich earnings')
         builder.side_effect = RuntimeError('failed')
         send([ITEM], is_disclosure=True)
         self.assertIn(LINK, request.post.call_args.kwargs['json']['text'])
