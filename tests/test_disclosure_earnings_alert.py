@@ -103,7 +103,7 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertIn('※ 예상치: WiseReport 주재무제표(연결) 기준\n※ 시가총액 기준일: 2026.11.02', message)
         self.assertIn('공시링크:\n' + LINK, message)
         self.assertTrue(html.unescape(message).endswith(
-            '과거실적:\nhttps://comp.wisereport.co.kr/company/c1050001.aspx?cn=&cmp_cd=039130'))
+            '과거실적:\nhttps://comp.wisereport.co.kr/company/c1010001.aspx?cn=&cmp_cd=039130'))
         self.assertNotIn('조회 시점', message)
         self.assertNotIn('기업명:', message)
         self.assertNotIn('보고서명:', message)
