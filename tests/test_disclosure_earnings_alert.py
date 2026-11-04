@@ -72,14 +72,15 @@ class EarningsAlertTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 alert.find_stock_code('하나투어', path)
 
-    def test_wise_request_discovers_dynamic_parameters_and_uses_matching_basis(self):
-        for consolidated, fin_type in [(True, '4'), (False, '3')]:
-            source = QUARTER if consolidated else QUARTER.replace('IFRS연결', 'IFRS별도')
-            earnings = {**self.earnings(), 'consolidated': consolidated}
+    def test_wise_requests_primary_regardless_of_disclosure_basis(self):
+        for disclosure_basis, reference_basis in [(True, True), (False, True), (False, False)]:
+            source = QUARTER if reference_basis else QUARTER.replace('IFRS연결', 'IFRS별도')
+            earnings = {**self.earnings(), 'consolidated': disclosure_basis}
             with patch.object(alert, '_fetch', side_effect=[WISE_MAIN, source]) as fetch:
                 result = alert.fetch_wise(Mock(), '039130', earnings)
             params = parse_qs(urlparse(fetch.call_args_list[1].args[1]).query)
-            self.assertEqual(params['fin_typ'], [fin_type])
+            self.assertEqual(params['fin_typ'], ['0'])
+            self.assertEqual(result['consolidated'], reference_basis)
             self.assertEqual(params['freq_typ'], ['Q'])
             self.assertEqual(params['encparam'], ['dynamic-value'])
             self.assertEqual(params['id'], ['dynamic-id'])
@@ -99,7 +100,7 @@ class EarningsAlertTest(unittest.TestCase):
             '하나투어 - 연결재무제표기준영업(잠정)실적(공정공시)\n(시가총액: 4,306억) A039130\n\n'))
         self.assertIn('\n**최근 실적 추이(연결기준)**\n', message)
         self.assertNotIn('<b>', message)
-        self.assertIn('※ 예상치: WiseReport 기준\n※ 시가총액 기준일: 2026.11.02', message)
+        self.assertIn('※ 예상치: WiseReport 주재무제표(연결) 기준\n※ 시가총액 기준일: 2026.11.02', message)
         self.assertIn('공시링크:\n' + LINK, message)
         self.assertTrue(html.unescape(message).endswith(
             '과거실적:\nhttps://comp.wisereport.co.kr/company/c1050001.aspx?cn=&cmp_cd=039130'))
@@ -150,6 +151,18 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertEqual(alert._surprise(None, Decimal('-10')), '')
         self.assertEqual(alert._surprise(Decimal('-10'), None), '')
         self.assertEqual(alert._surprise(Decimal('-10'), Decimal(0)), '')
+
+    def test_primary_basis_mismatch_is_labeled_and_not_reported_as_surprise(self):
+        earnings = {**self.earnings(), 'consolidated': False}
+        history, consensus = alert.parse_wise_quarters(QUARTER, earnings['period'], True)
+        message = alert.format_earnings(earnings, LINK, '039130', {
+            'history': history, 'consensus': consensus, 'consolidated': True})
+        self.assertIn('예상치 : 1,239억)', message)
+        self.assertNotIn(' / -10%', message)
+        self.assertNotIn(' / +2%', message)
+        self.assertIn('2026.3Q(별도)', message)
+        self.assertIn('2026.2Q(연결)', message)
+        self.assertIn('공시(별도)와 주재무제표(연결) 기준이 달라 예상 대비 비율 생략', message)
 
     def test_telegram_dispatch_preserves_original_alert_on_failure_and_other_feeds(self):
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'main_fastapi.py').read_text())

@@ -182,11 +182,23 @@ def fetch_wise(opener, code, earnings):
     element = re.search(r",\s*id\s*:\s*'([^']+)'", main)
     if not enc or not element:
         raise ValueError('WiseReport 분기 표 요청 정보를 찾지 못했습니다.')
-    params = {'cmp_cd': code, 'fin_typ': 4 if earnings['consolidated'] else 3,
+    params = {'cmp_cd': code, 'fin_typ': 0,
               'freq_typ': 'Q', 'extY': 0, 'extQ': 1,
               'encparam': enc[1], 'id': element[1]}
     quarter = _fetch(opener, 'https://comp.wisereport.co.kr/company/ajax/cF1001.aspx?' + urlencode(params), url)
-    history, consensus = parse_wise_quarters(quarter, earnings['period'], earnings['consolidated'])
+    # 주재무제표가 실제로 선택한 연결/별도 기준을 표에서 확인한다.
+    bases = set()
+    for row in _Rows(quarter).rows:
+        for cell in row:
+            if re.search(r'\d{4}/(03|06|09|12)', cell['text']):
+                match = re.search(r'IFRS(연결|별도)', cell['text'].replace(' ', ''))
+                if not match:
+                    raise ValueError('주재무제표의 회계기준을 확인하지 못했습니다.')
+                bases.add(match[1])
+    if len(bases) != 1:
+        raise ValueError('주재무제표의 연결/별도 기준이 일정하지 않습니다.')
+    consolidated = bases.pop() == '연결'
+    history, consensus = parse_wise_quarters(quarter, earnings['period'], consolidated)
     market_cap = None
     for row in _Rows(main).rows:
         if len(row) >= 2 and row[0]['text'] == '시가총액':
@@ -195,6 +207,7 @@ def fetch_wise(opener, code, earnings):
             break
     market_date = re.search(r'\[기준\s*:\s*(\d{4}\.\d{2}\.\d{2})\]', main)
     return {'history': history, 'consensus': consensus, 'market_cap': market_cap,
+            'consolidated': consolidated,
             'market_date': market_date[1] if market_date else None}
 
 
@@ -225,21 +238,28 @@ def format_earnings(earnings, link, code=None, wise=None):
     if details:
         lines.append(' '.join(details))
     lines.append('')
+    basis = '연결' if earnings['consolidated'] else '별도'
+    reference_basis = '연결' if wise.get('consolidated', earnings['consolidated']) else '별도'
+    mixed_basis = basis != reference_basis
     for metric in METRICS:
         actual = earnings['actual'][metric]
         expected = wise.get('consensus', {}).get(metric)
-        lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{_surprise(actual, expected)})')
-    basis = '연결' if earnings['consolidated'] else '별도'
-    lines += ['', f'**최근 실적 추이({basis}기준)**', '매출액 / 영업익 / 당기순이익']
+        comparison = '' if mixed_basis else _surprise(actual, expected)
+        lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{comparison})')
+    history_basis = f'당기 {basis} / 과거 주재무제표·{reference_basis}' if mixed_basis else f'{basis}기준'
+    lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익']
     period = earnings['period']
     for offset in range(5):
         ordinal = period[0] * 4 + period[1] - 1 - offset
         previous = (ordinal // 4, ordinal % 4 + 1)
         values = earnings['actual'] if offset == 0 else wise.get('history', {}).get(previous, {})
-        lines.append(f'{previous[0]}.{previous[1]}Q ' + ' / '.join(_amount(values.get(m)) for m in METRICS))
+        row_basis = f'({basis if offset == 0 else reference_basis})' if mixed_basis else ''
+        lines.append(f'{previous[0]}.{previous[1]}Q{row_basis} ' + ' / '.join(_amount(values.get(m)) for m in METRICS))
     lines.append('')
     if wise:
-        lines.append('※ 예상치: WiseReport 기준')
+        lines.append(f'※ 예상치: WiseReport 주재무제표({reference_basis}) 기준')
+        if mixed_basis:
+            lines.append(f'※ 공시({basis})와 주재무제표({reference_basis}) 기준이 달라 예상 대비 비율 생략')
         if wise.get('market_date') and wise.get('market_cap') is not None:
             lines.append(f"※ 시가총액 기준일: {wise['market_date']}")
     lines += ['', '공시링크:', escape(link)]
