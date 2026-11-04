@@ -244,7 +244,7 @@ def format_earnings(earnings, link, code=None, wise=None):
     for metric in METRICS:
         actual = earnings['actual'][metric]
         expected = wise.get('consensus', {}).get(metric)
-        comparison = '' if mixed_basis else _surprise(actual, expected)
+        comparison = _surprise(actual, expected)
         lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{comparison})')
     history_basis = f'당기 {basis} / 과거 주재무제표·{reference_basis}' if mixed_basis else f'{basis}기준'
     lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익']
@@ -258,8 +258,6 @@ def format_earnings(earnings, link, code=None, wise=None):
     lines.append('')
     if wise:
         lines.append(f'※ 예상치: WiseReport 주재무제표({reference_basis}) 기준')
-        if mixed_basis:
-            lines.append(f'※ 공시({basis})와 주재무제표({reference_basis}) 기준이 달라 예상 대비 비율 생략')
         if wise.get('market_date') and wise.get('market_cap') is not None:
             lines.append(f"※ 시가총액 기준일: {wise['market_date']}")
     lines += ['', '공시링크:', escape(link)]

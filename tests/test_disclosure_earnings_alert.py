@@ -152,17 +152,18 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertEqual(alert._surprise(Decimal('-10'), None), '')
         self.assertEqual(alert._surprise(Decimal('-10'), Decimal(0)), '')
 
-    def test_primary_basis_mismatch_is_labeled_and_not_reported_as_surprise(self):
+    def test_primary_basis_mismatch_keeps_labels_and_shows_surprise(self):
         earnings = {**self.earnings(), 'consolidated': False}
         history, consensus = alert.parse_wise_quarters(QUARTER, earnings['period'], True)
         message = alert.format_earnings(earnings, LINK, '039130', {
             'history': history, 'consensus': consensus, 'consolidated': True})
-        self.assertIn('예상치 : 1,239억)', message)
-        self.assertNotIn(' / -10%', message)
-        self.assertNotIn(' / +2%', message)
+        self.assertIn('예상치 : 1,239억 / -10%)', message)
+        self.assertIn(' / -15%', message)
+        self.assertIn(' / +2%', message)
         self.assertIn('2026.3Q(별도)', message)
         self.assertIn('2026.2Q(연결)', message)
-        self.assertIn('공시(별도)와 주재무제표(연결) 기준이 달라 예상 대비 비율 생략', message)
+        self.assertNotIn('기준이 달라', message)
+        self.assertNotIn('비율 생략', message)
 
     def test_telegram_dispatch_preserves_original_alert_on_failure_and_other_feeds(self):
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'main_fastapi.py').read_text())
