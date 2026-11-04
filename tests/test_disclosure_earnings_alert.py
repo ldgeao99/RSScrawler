@@ -175,15 +175,21 @@ class EarningsAlertTest(unittest.TestCase):
                         and n.name == 'send_telegram_notification')
         request = Mock()
         request.post.return_value.status_code = 200
+        request.post.return_value.json.return_value = {'ok': True}
         builder = Mock(return_value='rich earnings')
         namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', html=html,
                          shorten_telegram_link=lambda link: link,
                          SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
+                         is_earnings_disclosure=alert.is_earnings_disclosure,
+                         disclosure_earnings_store=Mock(),
                          build_earnings_alert=builder, requests=request, time=Mock(), logger=Mock())
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<dispatch>', 'exec'), namespace)
         send = namespace['send_telegram_notification']
         send([{**ITEM, 'sentiment': 'positive'}], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'], '🟢📢rich earnings')
+        archive = namespace['disclosure_earnings_store'].record_notification
+        self.assertEqual(archive.call_args.args[-1], 'sent')
+        self.assertEqual(archive.call_args.args[1], request.post.call_args.kwargs['json']['text'])
         send([{**ITEM, 'sentiment': 'negative'}], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'], '🔴📢rich earnings')
         builder.side_effect = RuntimeError('failed')
@@ -192,3 +198,10 @@ class EarningsAlertTest(unittest.TestCase):
         builder.reset_mock()
         send([ITEM], is_global=True)
         builder.assert_not_called()
+        builder.side_effect = None
+        request.post.return_value.json.return_value = {'ok': False}
+        send([ITEM], is_disclosure=True)
+        self.assertEqual(archive.call_args.args[-1], 'failed')
+        request.post.side_effect = TimeoutError('timeout')
+        send([ITEM], is_disclosure=True)
+        self.assertEqual(archive.call_args.args[-1], 'failed')

@@ -54,3 +54,5 @@ base_info/disclosure_keyword_list_exclude_temp.json
 disclosure_news_list_stream.json
 disclosure_news_list_filtered.json
 disclosure_news_list_blacklisted.json
+disclosure_earnings.json
+disclosure_earnings.json.*.tmp

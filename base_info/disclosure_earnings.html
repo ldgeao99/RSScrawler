@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실적 | 기업공시 감시센터</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#020617; color:#e2e8f0; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    header { background:#0f172a; border-bottom:1px solid #1e293b; }
+    .header-inner { max-width:1200px; margin:auto; padding:22px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    h1 { margin:0; font-size:21px; }
+    .subtitle { margin:7px 0 0; color:#94a3b8; font-size:13px; }
+    main { max-width:1200px; padding:24px; margin:auto; }
+    a { color:#6ee7b7; text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    button, input, select, .back { border:1px solid #334155; border-radius:9px; padding:10px 12px; background:#0f172a; color:#e2e8f0; font:inherit; font-size:14px; }
+    button { cursor:pointer; white-space:nowrap; }
+    button:hover { background:#1e293b; }
+    button:disabled { cursor:default; opacity:.4; }
+    input:focus, select:focus, button:focus-visible, a:focus-visible, summary:focus-visible { outline:2px solid #34d399; outline-offset:3px; }
+    form { display:flex; flex-wrap:wrap; gap:12px; padding:18px; background:#0f172a; border:1px solid #1e293b; border-radius:14px; align-items:end; }
+    label { display:flex; flex-direction:column; gap:7px; color:#94a3b8; font-size:12px; }
+    .search { flex:1; min-width:190px; }
+    .primary { background:#065f46; border-color:#047857; color:#ecfdf5; }
+    .primary:hover { background:#047857; }
+    .toolbar { display:flex; justify-content:space-between; gap:12px; align-items:center; margin:20px 0 12px; color:#94a3b8; font-size:13px; }
+    #error { border:1px solid #9f1239; border-radius:10px; padding:14px; color:#fda4af; margin:16px 0; }
+    #empty { border:1px dashed #334155; border-radius:14px; text-align:center; padding:60px 20px; color:#94a3b8; }
+    #empty strong { display:block; color:#e2e8f0; font-size:17px; margin-bottom:10px; }
+    article { border:1px solid #1e293b; border-radius:14px; background:#0f172a; margin:12px 0; overflow:hidden; }
+    .card-top { padding:18px 20px 12px; display:flex; align-items:start; justify-content:space-between; gap:16px; }
+    h2 { margin:0; font-size:17px; color:#f8fafc; }
+    .meta { color:#94a3b8; font-size:12px; margin-top:7px; line-height:1.7; }
+    .badge { border-radius:6px; padding:4px 8px; background:#1e293b; color:#cbd5e1; font-size:12px; white-space:nowrap; }
+    .sent { background:#064e3b; color:#6ee7b7; }
+    .failed { background:#4c0519; color:#fda4af; }
+    .pending { background:#451a03; color:#fcd34d; }
+    .metrics { display:grid; grid-template-columns:repeat(3,1fr); padding:0 20px 16px; gap:12px; }
+    .metric { background:#02061780; border-radius:9px; padding:12px; }
+    .metric-label { color:#94a3b8; font-size:12px; }
+    .metric-value { font-size:19px; font-weight:650; margin-top:5px; font-variant-numeric:tabular-nums; }
+    details { border-top:1px solid #1e293b; }
+    summary { cursor:pointer; color:#6ee7b7; padding:13px 20px; font-size:13px; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; font:13px/1.85 system-ui, sans-serif; margin:0; padding:4px 20px 18px; color:#cbd5e1; }
+    .links { padding:0 20px 16px; font-size:13px; display:flex; gap:18px; }
+    .pager { display:flex; gap:16px; justify-content:center; align-items:center; margin:24px 0; font-size:13px; color:#94a3b8; }
+    [hidden] { display:none !important; }
+    @media(max-width:600px) { .header-inner, main { padding:16px; } h1 { font-size:18px; } .back { font-size:12px; } form { padding:14px; } .metrics { gap:6px; padding:0 12px 12px; } .metric { padding:10px 8px; } .metric-value { font-size:16px; } .card-top { padding:16px 14px 12px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div><h1>📊 실적</h1><p class="subtitle">기업공시 실적 알림 · 최신 등록순</p></div>
+      <a class="back" href="/disclosure">기업공시 감시센터</a>
+    </div>
+  </header>
+  <main>
+    <form id="filters">
+      <label class="search">기업명 · 종목코드 · 보고서명<input id="search" type="search" placeholder="기업명 또는 종목코드 입력"></label>
+      <label>등록일 (한국시간)<input id="day" type="date"></label>
+      <label>텔레그램 전송<select id="status"><option value="">전체</option><option value="sent">전송 완료</option><option value="failed">전송 실패</option><option value="pending">전송 대기</option></select></label>
+      <button class="primary" type="submit">검색</button>
+      <button id="clear-filters" type="button">초기화</button>
+    </form>
+    <div class="toolbar"><span id="count" role="status" aria-live="polite">불러오는 중…</span><button id="refresh" type="button">새로고침</button></div>
+    <div id="error" role="alert" hidden></div>
+    <div id="empty" hidden><strong id="empty-title"></strong><span id="empty-description"></span></div>
+    <section id="results" aria-label="실적 알림 목록" aria-busy="true"></section>
+    <nav class="pager" aria-label="실적 목록 페이지"><button id="previous" type="button" disabled>이전</button><span id="page">1페이지</span><button id="next" type="button" disabled>다음</button></nav>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    let offset = 0, requestId = 0, hasMore = false, controller;
+    let activeFilters = {q: '', day: '', status: ''};
+    const limit = 30;
+    const statuses = {sent: '전송 완료', failed: '전송 실패', pending: '전송 대기'};
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+    function amount(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return '-';
+      const rounded = Math.sign(numeric) * Math.round(Math.abs(numeric));
+      return (Object.is(rounded, -0) ? 0 : rounded).toLocaleString('ko-KR') + '억';
+    }
+    function timestamp(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('ko-KR', {timeZone: 'Asia/Seoul', hour12: false});
+    }
+    function card(record) {
+      const article = element('article');
+      const top = element('div', 'card-top');
+      const heading = element('div');
+      heading.append(element('h2', '', record.company || record.source_title || '실적 공시'));
+      const basis = record.consolidated === true ? '연결' : record.consolidated === false ? '별도' : '';
+      heading.append(element('div', 'meta', [record.code ? 'A' + record.code : '', record.period, basis, record.report].filter(Boolean).join(' · ')));
+      heading.append(element('div', 'meta', '등록 ' + timestamp(record.created_at)));
+      top.append(heading, element('span', 'badge ' + (['sent', 'failed', 'pending'].includes(record.telegram_status) ? record.telegram_status : ''), statuses[record.telegram_status] || '상태 미확인'));
+      article.append(top);
+      const metrics = element('div', 'metrics');
+      for (const [key, label] of [['revenue', '매출액'], ['operating_profit', '영업이익'], ['net_income', '당기순이익']]) {
+        const metric = element('div', 'metric');
+        metric.append(element('div', 'metric-label', label), element('div', 'metric-value', amount(record.actual?.[key])));
+        metrics.append(metric);
+      }
+      article.append(metrics);
+      const details = element('details');
+      details.append(element('summary', '', '알림 내용 보기'), element('pre', '', record.message_text || '알림 본문이 없습니다.'));
+      const links = element('div', 'links');
+      // URL은 저장된 HTML을 삽입하지 않고 검증된 식별자로 구성한다.
+      if (/^\d{14}$/.test(record.receipt_no || '')) {
+        const link = element('a', '', 'DART 공시');
+        link.href = 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=' + record.receipt_no;
+        link.target = '_blank'; link.rel = 'noopener noreferrer'; links.append(link);
+      }
+      if (/^[0-9A-Z]{6}$/.test(record.code || '')) {
+        const link = element('a', '', '과거실적');
+        link.href = 'https://comp.wisereport.co.kr/company/c1010001.aspx?cn=&cmp_cd=' + record.code;
+        link.target = '_blank'; link.rel = 'noopener noreferrer'; links.append(link);
+      }
+      details.append(links); article.append(details);
+      return article;
+    }
+    async function load() {
+      if (controller) controller.abort();
+      controller = new AbortController();
+      const id = ++requestId;
+      $('results').setAttribute('aria-busy', 'true'); $('error').hidden = true;
+      $('count').textContent = '불러오는 중…';
+      $('previous').disabled = true; $('next').disabled = true;
+      try {
+        const params = new URLSearchParams({...activeFilters, offset: String(offset), limit: String(limit)});
+        const response = await fetch('/api/disclosure-earnings?' + params, {cache: 'no-store', signal: controller.signal});
+        if (response.status === 401) { window.location.assign('/login?next=/disclosure-earnings'); return; }
+        if (!response.ok) throw new Error('실적 목록을 불러오지 못했습니다. 새로고침해 주세요.');
+        const data = await response.json();
+        if (id !== requestId) return;
+        $('results').replaceChildren(...data.items.map(card));
+        $('count').textContent = '검색 ' + data.filtered_total.toLocaleString('ko-KR') + '건 / 전체 ' + data.total.toLocaleString('ko-KR') + '건';
+        $('empty').hidden = data.items.length > 0;
+        $('empty-title').textContent = data.total === 0 ? '아직 저장된 실적이 없습니다.' : '검색 결과가 없습니다.';
+        $('empty-description').textContent = data.total === 0 ? '적용 이후 생성되는 실적 알림부터 이곳에 표시됩니다.' : '기업명이나 날짜, 전송 상태를 변경해 보세요.';
+        hasMore = data.has_more;
+        $('page').textContent = (Math.floor(offset / limit) + 1) + '페이지';
+      } catch (error) {
+        if (error.name === 'AbortError' || id !== requestId) return;
+        $('error').textContent = error.message;
+        $('error').hidden = false;
+        $('count').textContent = '조회 실패';
+      } finally {
+        if (id === requestId) {
+          $('results').setAttribute('aria-busy', 'false');
+          $('previous').disabled = offset === 0;
+          $('next').disabled = !hasMore;
+        }
+      }
+    }
+    $('filters').addEventListener('submit', event => {
+      event.preventDefault();
+      activeFilters = {q: $('search').value.trim(), day: $('day').value, status: $('status').value};
+      offset = 0; load();
+    });
+    $('clear-filters').addEventListener('click', () => { $('filters').reset(); activeFilters = {q: '', day: '', status: ''}; offset = 0; load(); });
+    $('refresh').addEventListener('click', load);
+    $('previous').addEventListener('click', () => { offset = Math.max(0, offset - limit); load(); });
+    $('next').addEventListener('click', () => { if (hasMore) { offset += limit; load(); } });
+    load();
+  </script>
+</body>
+</html>

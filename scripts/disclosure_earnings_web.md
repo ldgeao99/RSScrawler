@@ -1,0 +1,43 @@
+# 실적 알림 보관 및 웹 조회
+
+기업공시 감시센터 오른쪽 위의 **실적** 버튼으로 /disclosure-earnings를 엽니다.
+기존 관리자 로그인으로 보호되며 API(/api/disclosure-earnings)도 같은 인증을 사용합니다.
+기업명/종목코드/보고서명 검색, KST 등록일 필터, 텔레그램 전송 상태 필터 및 페이지 이동을 지원합니다.
+각 항목을 펼치면 텔레그램에 전달한 본문과 DART·WiseReport 링크를 볼 수 있습니다.
+
+## 저장
+
+프로젝트 루트의 disclosure_earnings.json에 JSON 배열로 누적 저장합니다.
+실행 중 운영 데이터이므로 Git에서 제외합니다. 빈 파일을 배포하여 기존 기록을 덮어쓰지 않습니다.
+별도 예약 배치 없이 실시간 포착 공시 알림 전송 경로에서 기록하며,
+첫 스캔 알림 생략 및 텔레그램 설정이 없을 때 생략하는 기존 동작은 유지합니다.
+적용 전 전송된 텔레그램 메시지는 자동으로 가져오지 않습니다.
+
+접수번호를 키로 중복 기록을 갱신합니다. 정정공시의 접수번호가 다르면 별도 기록입니다.
+조회/저장은 스레드 잠금으로 보호하고 임시 파일을 만든 후 원자적으로 교체합니다.
+잘못된 JSON은 빈 기록으로 덮어쓰지 않으며, 저장 오류가 나도 텔레그램 전송은 계속합니다.
+현재 단일 앱 프로세스 내 수집 스레드 간 동기화에 맞춘 구조입니다.
+
+주요 필드:
+
+- receipt_no, company, code, report, period, consolidated
+- actual, consensus, reference_consolidated, market_cap, market_date
+- history: 이번 분기 및 직전 4개 분기의 실적과 각 회계기준
+- reference_fetched_at: WiseReport 조회 시각
+- message_html: Telegram에 넘긴 본문(감성 이모지 포함)
+- message_text: 웹에 일반 텍스트로 표시할 본문. 별표는 문자 그대로 유지
+- created_at, updated_at, sent_at: 한국시간 ISO 형식
+- telegram_status: pending(전송 대기), sent(HTTP 성공 및 Telegram ok=true), failed
+
+금액 단위는 억원이며 Decimal 정밀도를 보존하기 위해 JSON에서 금액을 문자열로 저장합니다.
+빈 금액은 null/필드 부재로 유지합니다. 공시 파싱 실패 시 제목·링크 알림을 그대로 보관합니다.
+매칭/비교자료 실패 시 확보한 현재 실적과 알림을 보관합니다.
+전송 직전에 pending으로 저장하고 응답 후 sent/failed로 갱신합니다.
+저장 실패 또는 전송 중 프로세스 종료 시 마지막 상태가 pending으로 남을 수 있습니다.
+이 화면에서 텔레그램을 자동 재전송하지는 않습니다.
+
+검증:
+
+    python -m unittest discover -s tests
+
+서버에 코드 반영 후 앱을 재시작하면 그 이후 새로 생성되는 알림부터 누적됩니다.

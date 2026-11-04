@@ -30,7 +30,8 @@ import disclosure_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
 import batch_logger
-from disclosure_earnings_alert import build_earnings_alert
+from disclosure_earnings_alert import build_earnings_alert, is_earnings_disclosure
+import disclosure_earnings_store
 
 from fastapi import FastAPI, Body, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -218,14 +219,19 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
         text = f'{emoji} {title}\n\n{link}\n​'
 
+        earnings_record = {}
+        archive_earnings = is_disclosure and is_earnings_disclosure(raw_title)
         if is_disclosure:
             try:
-                earnings_text = build_earnings_alert(item)
+                earnings_text = build_earnings_alert(item, on_record=earnings_record.update)
                 if earnings_text:
                     text = f'{emoji}{earnings_text}'
             except Exception as error:
                 logger.warning('잠정실적 알림 보강 실패, 기존 공시 알림 사용: %s', error)
 
+        if archive_earnings:
+            disclosure_earnings_store.record_notification(item, text, earnings_record, 'pending')
+        delivery_status = 'failed'
         try:
             resp = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
@@ -239,8 +245,12 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
             )
             if resp.status_code != 200:
                 logger.warning(f"⚠️ 텔레그램 전송 실패 ({resp.status_code}): {resp.text[:200]}")
+            else:
+                delivery_status = 'sent' if resp.json().get('ok') is True else 'failed'
         except Exception as e:
             logger.warning(f"⚠️ 텔레그램 전송 에러: {e}")
+        if archive_earnings:
+            disclosure_earnings_store.record_notification(item, text, earnings_record, delivery_status)
 
         time.sleep(0.3)  # 텔레그램 플러드 제한 방지용 짧은 간격
 
@@ -1337,6 +1347,18 @@ async def get_dashboard():
 @app.get("/disclosure")
 async def get_disclosure_dashboard():
     return FileResponse("base_info/disclosure.html")
+
+
+@app.get("/disclosure-earnings")
+async def get_disclosure_earnings_page():
+    return FileResponse("base_info/disclosure_earnings.html")
+
+
+@app.get("/api/disclosure-earnings")
+def get_disclosure_earnings(q: str = '', day: str = '', status: str = '', offset: int = 0, limit: int = 30):
+    return JSONResponse(
+        content=disclosure_earnings_store.list_notifications(q, day, status, offset, limit),
+        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/channel-view")

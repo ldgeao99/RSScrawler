@@ -4,7 +4,7 @@ import html
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar
@@ -272,7 +272,7 @@ def format_earnings(earnings, link, code=None, wise=None):
     return '\n'.join(lines)
 
 
-def build_earnings_alert(item):
+def build_earnings_alert(item, on_record=None):
     """DART 실패는 기존 알림으로, 매칭/비교자료 실패는 현재 실적만으로 대체한다."""
     if not is_earnings_disclosure(item.get('title', '')):
         return None
@@ -300,5 +300,26 @@ def build_earnings_alert(item):
     except Exception as error:
         logger.warning('잠정실적 비교자료 보강 실패, DART 실적만 알림: %s', error)
     message = format_earnings(earnings, link, code, wise)
+    if on_record is not None:
+        reference = wise or {}
+        history = []
+        for offset in range(5):
+            ordinal = earnings['period'][0] * 4 + earnings['period'][1] - 1 - offset
+            period = (ordinal // 4, ordinal % 4 + 1)
+            history.append({
+                'period': f'{period[0]}Q{period[1]}',
+                'consolidated': earnings['consolidated'] if offset == 0 else reference.get('consolidated'),
+                'actual': earnings['actual'] if offset == 0 else reference.get('history', {}).get(period, {}),
+            })
+        on_record({
+            'company': earnings['company'], 'code': code, 'report': earnings['report'],
+            'period': f"{earnings['period'][0]}Q{earnings['period'][1]}", 'unit': '억원',
+            'consolidated': earnings['consolidated'], 'actual': earnings['actual'],
+            'consensus': reference.get('consensus', {}),
+            'reference_consolidated': reference.get('consolidated'),
+            'market_cap': reference.get('market_cap'), 'market_date': reference.get('market_date'),
+            'reference_fetched_at': datetime.now(timezone(timedelta(hours=9))).isoformat() if wise else None,
+            'history': history,
+        })
     # HTML 태그/엔티티를 중간에서 자르지 않고 기존 알림으로 대체한다.
     return message if len(message.encode('utf-16-le')) // 2 <= 4000 else None
