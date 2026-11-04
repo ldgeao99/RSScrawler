@@ -212,7 +212,12 @@ def fetch_wise(opener, code, earnings):
 
 
 def _amount(value):
-    return '-' if value is None else f'{value.quantize(Decimal(1), rounding=ROUND_HALF_UP):,}억'
+    if value is None:
+        return '-'
+    rounded = value.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    if rounded == 0:
+        rounded = abs(rounded)
+    return f'{rounded:,}억'
 
 
 def _surprise(actual, expected):

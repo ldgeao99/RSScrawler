@@ -135,6 +135,10 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertEqual(alert._surprise(Decimal(-10), Decimal(-5)), ' / -100%')
         self.assertEqual(alert._surprise(Decimal(10), Decimal(0)), '')
         self.assertEqual(alert._amount(Decimal('-1.5')), '-2억')
+        self.assertEqual(alert._amount(Decimal('-0.49')), '0억')
+        self.assertEqual(alert._amount(Decimal('-0')), '0억')
+        self.assertEqual(alert._amount(Decimal('0.49')), '0억')
+        self.assertEqual(alert._amount(Decimal('-0.5')), '-1억')
 
     def test_surprise_sign_for_losses_profit_transitions_and_missing_estimates(self):
         for actual, expected, result in [
