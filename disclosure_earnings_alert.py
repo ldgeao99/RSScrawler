@@ -237,22 +237,24 @@ def fetch_wise(opener, code, earnings):
     element = re.search(r",\s*id\s*:\s*'([^']+)'", main)
     if not enc or not element:
         raise ValueError('WiseReport 분기 표 요청 정보를 찾지 못했습니다.')
-    params = {'cmp_cd': code, 'fin_typ': 0,
+    params = {'cmp_cd': code, 'fin_typ': 4 if earnings['consolidated'] else 3,
               'freq_typ': 'Q', 'extY': 0, 'extQ': 1,
               'encparam': enc[1], 'id': element[1]}
     quarter = _fetch(opener, 'https://comp.wisereport.co.kr/company/ajax/cF1001.aspx?' + urlencode(params), url)
-    # 주재무제표가 실제로 선택한 연결/별도 기준을 표에서 확인한다.
+    # 응답 표도 공시와 같은 연결/별도 기준인지 확인한다.
     bases = set()
     for row in _Rows(quarter).rows:
         for cell in row:
             if re.search(r'\d{4}/(03|06|09|12)', cell['text']):
                 match = re.search(r'IFRS(연결|별도)', cell['text'].replace(' ', ''))
                 if not match:
-                    raise ValueError('주재무제표의 회계기준을 확인하지 못했습니다.')
+                    raise ValueError('WiseReport 회계기준을 확인하지 못했습니다.')
                 bases.add(match[1])
     if len(bases) != 1:
-        raise ValueError('주재무제표의 연결/별도 기준이 일정하지 않습니다.')
+        raise ValueError('WiseReport 연결/별도 기준이 일정하지 않습니다.')
     consolidated = bases.pop() == '연결'
+    if consolidated != earnings['consolidated']:
+        raise ValueError('WiseReport 회계기준이 공시와 다릅니다.')
     history, consensus = parse_wise_quarters(quarter, earnings['period'], consolidated)
     market_cap = None
     for row in _Rows(main).rows:
@@ -306,7 +308,7 @@ def format_earnings(earnings, link, code=None, wise=None):
         expected = wise.get('consensus', {}).get(metric)
         comparison = _surprise(actual, expected)
         lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{comparison})')
-    history_basis = f'당기 {basis} / 과거 주재무제표·{reference_basis}' if mixed_basis else f'{basis}기준'
+    history_basis = f'당기 {basis} / 과거 {reference_basis}' if mixed_basis else f'{basis}기준'
     lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익']
     period = earnings['period']
     for offset in range(5):
@@ -317,7 +319,7 @@ def format_earnings(earnings, link, code=None, wise=None):
         lines.append(f'{previous[0]}.{previous[1]}Q{row_basis} ' + ' / '.join(_amount(values.get(m)) for m in METRICS))
     lines.append('')
     if wise:
-        lines.append(f'※ 예상치: WiseReport 주재무제표({reference_basis}) 기준')
+        lines.append(f'※ 예상치: WiseReport K-IFRS({reference_basis}) 기준')
         if wise.get('market_date') and wise.get('market_cap') is not None:
             lines.append(f"※ 시가총액 기준일: {wise['market_date']}")
     lines += ['', '공시링크:', escape(link)]

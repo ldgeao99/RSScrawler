@@ -72,14 +72,14 @@ class EarningsAlertTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 alert.find_stock_code('하나투어', path)
 
-    def test_wise_requests_primary_regardless_of_disclosure_basis(self):
-        for disclosure_basis, reference_basis in [(True, True), (False, True), (False, False)]:
+    def test_wise_requests_match_disclosure_basis(self):
+        for disclosure_basis, reference_basis in [(True, True), (False, False)]:
             source = QUARTER if reference_basis else QUARTER.replace('IFRS연결', 'IFRS별도')
             earnings = {**self.earnings(), 'consolidated': disclosure_basis}
             with patch.object(alert, '_fetch', side_effect=[WISE_MAIN, source]) as fetch:
                 result = alert.fetch_wise(Mock(), '039130', earnings)
             params = parse_qs(urlparse(fetch.call_args_list[1].args[1]).query)
-            self.assertEqual(params['fin_typ'], ['0'])
+            self.assertEqual(params['fin_typ'], ['4' if disclosure_basis else '3'])
             self.assertEqual(result['consolidated'], reference_basis)
             self.assertEqual(params['freq_typ'], ['Q'])
             self.assertEqual(params['encparam'], ['dynamic-value'])
@@ -100,7 +100,7 @@ class EarningsAlertTest(unittest.TestCase):
             '하나투어 - 연결재무제표기준영업(잠정)실적(공정공시)\n(시가총액: 4,306억) A039130\n\n'))
         self.assertIn('\n**최근 실적 추이(연결기준)**\n', message)
         self.assertNotIn('<b>', message)
-        self.assertIn('※ 예상치: WiseReport 주재무제표(연결) 기준\n※ 시가총액 기준일: 2026.11.02', message)
+        self.assertIn('※ 예상치: WiseReport K-IFRS(연결) 기준\n※ 시가총액 기준일: 2026.11.02', message)
         self.assertIn('공시링크:\n' + LINK, message)
         self.assertTrue(html.unescape(message).endswith(
             '과거실적:\nhttps://comp.wisereport.co.kr/company/c1010001.aspx?cn=&cmp_cd=039130'))
@@ -156,18 +156,19 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertEqual(alert._surprise(Decimal('-10'), None), '')
         self.assertEqual(alert._surprise(Decimal('-10'), Decimal(0)), '')
 
-    def test_primary_basis_mismatch_keeps_labels_and_shows_surprise(self):
-        earnings = {**self.earnings(), 'consolidated': False}
-        history, consensus = alert.parse_wise_quarters(QUARTER, earnings['period'], True)
-        message = alert.format_earnings(earnings, LINK, '039130', {
-            'history': history, 'consensus': consensus, 'consolidated': True})
-        self.assertIn('예상치 : 1,239억 / -10%)', message)
-        self.assertIn(' / -15%', message)
-        self.assertIn(' / +2%', message)
-        self.assertIn('2026.3Q(별도)', message)
-        self.assertIn('2026.2Q(연결)', message)
-        self.assertNotIn('기준이 달라', message)
-        self.assertNotIn('비율 생략', message)
+    def test_response_with_different_basis_is_rejected_without_retrying_primary(self):
+        for disclosure_basis in (True, False):
+            source = QUARTER.replace('IFRS연결', 'IFRS별도') if disclosure_basis else QUARTER
+            earnings = {**self.earnings(), 'consolidated': disclosure_basis}
+            with self.subTest(disclosure_basis=disclosure_basis), \
+                    patch.object(alert, '_fetch', side_effect=[WISE_MAIN, source]) as fetch:
+                with self.assertRaisesRegex(ValueError, '회계기준이 공시와 다릅니다'):
+                    alert.fetch_wise(Mock(), '039130', earnings)
+                self.assertEqual(fetch.call_count, 2)
+
+    def test_standard_and_consolidated_report_names_select_correct_basis(self):
+        self.assertTrue(alert.parse_dart(MAIN, BODY)['consolidated'])
+        self.assertFalse(alert.parse_dart(MAIN.replace('연결재무제표기준', ''), BODY)['consolidated'])
 
     def test_telegram_dispatch_preserves_original_alert_on_failure_and_other_feeds(self):
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'main_fastapi.py').read_text())
