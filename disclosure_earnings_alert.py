@@ -14,6 +14,7 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 logger = logging.getLogger('news_logger')
 MAP_FILE = Path('base_info/company_stock_map.json')
+ALIASES_FILE = Path('base_info/company_stock_aliases.json')
 METRICS = ('revenue', 'operating_profit', 'net_income')
 LABELS = dict(zip(METRICS, ('매출액', '영업익', '순이익')))
 
@@ -119,6 +120,60 @@ def find_stock_code(company, path=None):
     if not re.fullmatch(r'[0-9A-Z]{6}', code):
         raise ValueError('잘못된 종목코드입니다.')
     return code
+
+
+def stock_code_from_dart(company, main_html, opener):
+    """현재 공시에서 연결한 DART 기업정보의 공시회사명·종목코드를 확인한다."""
+    corp_ids = set(re.findall(r"""openCorpInfoNew\(\s*['"](\d{8})['"]""", main_html))
+    if len(corp_ids) != 1:
+        return None
+    url = 'https://dart.fss.or.kr/dsae001/selectPopup.ax?' + urlencode({'selectKey': corp_ids.pop()})
+    source = _fetch(opener, url, 'https://dart.fss.or.kr/')
+    fields = {}
+    for row in _Rows(source).rows:
+        if len(row) >= 2:
+            label = re.sub(r'\s+', '', row[0]['text'])
+            if label in ('공시회사명', '종목코드'):
+                fields.setdefault(label, set()).add(re.sub(r'\s+', '', row[1]['text']))
+    if fields.get('공시회사명') != {re.sub(r'\s+', '', company)}:
+        raise ValueError('DART 기업정보의 공시회사명이 현재 공시와 다릅니다.')
+    codes = fields.get('종목코드', set())
+    if len(codes) != 1 or not re.fullmatch(r'[0-9A-Z]{6}', next(iter(codes))):
+        raise ValueError('DART 기업정보에서 유일한 상장 종목코드를 확인하지 못했습니다.')
+    return codes.pop()
+
+
+def find_alias_stock_code(company, path=None):
+    alias_path = Path(path or ALIASES_FILE)
+    if not alias_path.exists():
+        return None
+    aliases = json.loads(alias_path.read_text(encoding='utf-8'))
+    normalized = re.sub(r'\s+', '', company)
+    codes = {code for name, code in aliases.items() if re.sub(r'\s+', '', name) == normalized}
+    if not codes:
+        return None
+    if len(codes) != 1:
+        raise ValueError('기업명 별칭의 종목코드가 중복됩니다.')
+    code = codes.pop()
+    if not isinstance(code, str) or not re.fullmatch(r'[0-9A-Z]{6}', code):
+        raise ValueError('기업명 별칭의 종목코드가 올바르지 않습니다.')
+    return code
+
+
+def resolve_stock_code(company, main_html, opener):
+    try:
+        code = stock_code_from_dart(company, main_html, opener)
+        if code:
+            return code
+    except Exception as error:
+        logger.warning('DART 기업정보 종목코드 조회 실패, 로컬 매칭 사용: %s', error)
+    try:
+        return find_stock_code(company)
+    except (FileNotFoundError, ValueError):
+        code = find_alias_stock_code(company)
+        if code:
+            return code
+        raise
 
 
 def parse_wise_quarters(source, target, consolidated):
@@ -295,7 +350,7 @@ def build_earnings_alert(item, on_record=None):
         return None
     code, wise = None, None
     try:
-        code = find_stock_code(earnings['company'])
+        code = resolve_stock_code(earnings['company'], main, opener)
         wise = fetch_wise(opener, code, earnings)
     except Exception as error:
         logger.warning('잠정실적 비교자료 보강 실패, DART 실적만 알림: %s', error)
