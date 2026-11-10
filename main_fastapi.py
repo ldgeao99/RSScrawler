@@ -230,7 +230,7 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         if is_disclosure and is_fair_disclosure(raw_title):
             fair_title = fetch_fair_disclosure_title(item)
             if fair_title:
-                text = f'{emoji} {title}\n📌 {html.escape(fair_title)}\n\n{link}\n​'
+                text = f'{emoji} {title}\n- {html.escape(fair_title)}\n\n{link}\n​'
 
         earnings_record = {}
         archive_earnings = is_disclosure and is_earnings_disclosure(raw_title)

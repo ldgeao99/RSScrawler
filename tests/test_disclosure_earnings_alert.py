@@ -216,7 +216,7 @@ class EarningsAlertTest(unittest.TestCase):
         fair = {'title': '(유가)동아지질 - 수시공시의무관련사항(공정공시)', 'link': LINK, 'sentiment': 'neutral'}
         send([fair], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'],
-                         f'🟢📢 {fair["title"]}\n📌 배당 &amp; 자사주 계획\n\n{LINK}\n\u200b')
+                         f'🟢📢 {fair["title"]}\n- 배당 &amp; 자사주 계획\n\n{LINK}\n\u200b')
         namespace['fetch_fair_disclosure_title'].return_value = None
         send([fair], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🟢📢 {fair["title"]}\n\n{LINK}\n\u200b')
