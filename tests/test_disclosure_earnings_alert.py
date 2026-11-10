@@ -209,17 +209,19 @@ class EarningsAlertTest(unittest.TestCase):
         send([ITEM], is_disclosure=True)
         self.assertEqual(archive.call_args.args[-1], 'failed')
 
-        # 공정공시: 감성과 무관하게 🟢, 원래 제목은 유지하고 본문 공시제목을 다음 줄에 덧붙인다.
+        # 공정공시: 색은 키워드 감성(neutral → 🔵)을 따르고, 원래 제목 아래 본문 공시제목을 덧붙인다.
         request.post.side_effect = None
         request.post.return_value.json.return_value = {'ok': True}
         builder.return_value = None
         fair = {'title': '(유가)동아지질 - 수시공시의무관련사항(공정공시)', 'link': LINK, 'sentiment': 'neutral'}
         send([fair], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'],
-                         f'🟢📢 {fair["title"]}\n- 배당 &amp; 자사주 계획\n\n{LINK}\n\u200b')
+                         f'🔵📢 {fair["title"]}\n- 배당 &amp; 자사주 계획\n\n{LINK}\n\u200b')
         namespace['fetch_fair_disclosure_title'].return_value = None
         send([fair], is_disclosure=True)
-        self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🟢📢 {fair["title"]}\n\n{LINK}\n\u200b')
+        self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🔵📢 {fair["title"]}\n\n{LINK}\n\u200b')
+        send([{**fair, 'sentiment': 'positive'}], is_disclosure=True)
+        self.assertTrue(request.post.call_args.kwargs['json']['text'].startswith('🟢📢 '))
         namespace['fetch_fair_disclosure_title'].reset_mock()
         send([{**fair, 'sentiment': 'negative'}], is_global=True)
         namespace['fetch_fair_disclosure_title'].assert_not_called()

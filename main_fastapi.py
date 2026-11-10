@@ -215,9 +215,6 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         title = html.escape(raw_title)
         link = html.escape(shorten_telegram_link(item.get("link", "")))
         emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
-        # 수시공시의무관련사항(공정공시)은 주주환원·사업계획 안내가 대부분이라 긍정(🟢)으로 고정한다.
-        if is_disclosure and is_fair_disclosure(raw_title):
-            emoji = SENTIMENT_EMOJI["positive"]
         # 감성 표시가 1순위 시그널이라 자리를 유지하고, 해외발 기사만 그 바로 뒤에 🌐를 보조로 붙인다.
         if is_disclosure:
             emoji = f"{emoji}📢"
