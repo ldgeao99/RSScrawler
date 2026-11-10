@@ -30,7 +30,12 @@ import disclosure_back_up_scheduler
 import schedule_extraction_scheduler
 import company_list_sync_scheduler
 import batch_logger
-from disclosure_earnings_alert import build_earnings_alert, is_earnings_disclosure
+from disclosure_earnings_alert import (
+    build_earnings_alert,
+    fetch_fair_disclosure_title,
+    is_earnings_disclosure,
+    is_fair_disclosure,
+)
 import disclosure_earnings_store
 
 from fastapi import FastAPI, Body, HTTPException, Request, status
@@ -210,6 +215,9 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         title = html.escape(raw_title)
         link = html.escape(shorten_telegram_link(item.get("link", "")))
         emoji = SENTIMENT_EMOJI.get(item.get("sentiment", "neutral"), "🔵")
+        # 수시공시의무관련사항(공정공시)은 주주환원·사업계획 안내가 대부분이라 긍정(🟢)으로 고정한다.
+        if is_disclosure and is_fair_disclosure(raw_title):
+            emoji = SENTIMENT_EMOJI["positive"]
         # 감성 표시가 1순위 시그널이라 자리를 유지하고, 해외발 기사만 그 바로 뒤에 🌐를 보조로 붙인다.
         if is_disclosure:
             emoji = f"{emoji}📢"
@@ -218,6 +226,11 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         # 제목은 링크로 감싸지 않아 기본 텍스트색(흰색)으로 표시하고,
         # URL은 별도 줄에 그대로 둬서 텔레그램이 자동으로 링크 처리하게 한다.
         text = f'{emoji} {title}\n\n{link}\n​'
+        # 공정공시는 제목이 '수시공시의무관련사항'뿐이라, DART 본문의 공시제목을 원래 제목 아래에 덧붙인다.
+        if is_disclosure and is_fair_disclosure(raw_title):
+            fair_title = fetch_fair_disclosure_title(item)
+            if fair_title:
+                text = f'{emoji} {title}\n📌 {html.escape(fair_title)}\n\n{link}\n​'
 
         earnings_record = {}
         archive_earnings = is_disclosure and is_earnings_disclosure(raw_title)

@@ -182,6 +182,8 @@ class EarningsAlertTest(unittest.TestCase):
                          shorten_telegram_link=lambda link: link,
                          SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
                          is_earnings_disclosure=alert.is_earnings_disclosure,
+                         is_fair_disclosure=alert.is_fair_disclosure,
+                         fetch_fair_disclosure_title=Mock(return_value='배당 & 자사주 계획'),
                          disclosure_earnings_store=Mock(),
                          build_earnings_alert=builder, requests=request, time=Mock(), logger=Mock())
         exec(compile(ast.Module(body=[function], type_ignores=[]), '<dispatch>', 'exec'), namespace)
@@ -206,3 +208,19 @@ class EarningsAlertTest(unittest.TestCase):
         request.post.side_effect = TimeoutError('timeout')
         send([ITEM], is_disclosure=True)
         self.assertEqual(archive.call_args.args[-1], 'failed')
+
+        # 공정공시: 감성과 무관하게 🟢, 원래 제목은 유지하고 본문 공시제목을 다음 줄에 덧붙인다.
+        request.post.side_effect = None
+        request.post.return_value.json.return_value = {'ok': True}
+        builder.return_value = None
+        fair = {'title': '(유가)동아지질 - 수시공시의무관련사항(공정공시)', 'link': LINK, 'sentiment': 'neutral'}
+        send([fair], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['text'],
+                         f'🟢📢 {fair["title"]}\n📌 배당 &amp; 자사주 계획\n\n{LINK}\n\u200b')
+        namespace['fetch_fair_disclosure_title'].return_value = None
+        send([fair], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🟢📢 {fair["title"]}\n\n{LINK}\n\u200b')
+        namespace['fetch_fair_disclosure_title'].reset_mock()
+        send([{**fair, 'sentiment': 'negative'}], is_global=True)
+        namespace['fetch_fair_disclosure_title'].assert_not_called()
+        self.assertTrue(request.post.call_args.kwargs['json']['text'].startswith('🔴🌐'))

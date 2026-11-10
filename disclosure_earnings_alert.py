@@ -329,23 +329,65 @@ def format_earnings(earnings, link, code=None, wise=None):
     return '\n'.join(lines)
 
 
+def fetch_dart_document(opener, receipt):
+    """DART 공시 메인 페이지와 본문 문서(viewer.do) HTML을 함께 가져온다."""
+    link = f'https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}'
+    main = _fetch(opener, link)
+    doc = re.search(r'viewDoc\(\s*[\'"]' + receipt + r'[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]', main)
+    if not doc:
+        raise ValueError('DART 본문 위치를 찾지 못했습니다.')
+    params = dict(zip(('dcmNo', 'eleId', 'offset', 'length', 'dtd'), doc.groups()))
+    params['rcpNo'] = receipt
+    return main, _fetch(opener, 'https://dart.fss.or.kr/report/viewer.do?' + urlencode(params), link)
+
+
+def _receipt(item):
+    receipt = parse_qs(urlparse(item.get('link', '')).query).get('rcpNo', [''])[0]
+    return receipt if re.fullmatch(r'\d{14}', receipt) else None
+
+
+def is_fair_disclosure(title):
+    """수시공시의무관련사항(공정공시): 제목만으로는 내용을 알 수 없어 본문의 공시제목을 덧붙인다."""
+    return '수시공시의무관련사항' in re.sub(r'\s+', '', html.unescape(title))
+
+
+def parse_fair_disclosure_title(body_html):
+    for row in _Rows(body_html).rows:
+        for index, cell in enumerate(row[:-1]):
+            if cell['text'].replace(' ', '') == '공시제목':
+                title = row[index + 1]['text'].strip()
+                if title and title != '-':
+                    return title
+    raise ValueError('공정공시 본문의 공시제목을 찾지 못했습니다.')
+
+
+def fetch_fair_disclosure_title(item):
+    """실패하면 None을 돌려 기존 알림(원래 제목만)으로 보낸다."""
+    if not is_fair_disclosure(item.get('title', '')):
+        return None
+    receipt = _receipt(item)
+    if not receipt:
+        return None
+    try:
+        _, body = fetch_dart_document(build_opener(HTTPCookieProcessor(CookieJar())), receipt)
+        title = parse_fair_disclosure_title(body)
+    except Exception as error:
+        logger.warning('공정공시 공시제목 보강 실패, 기존 공시 알림 사용: %s', error)
+        return None
+    return title if len(title) <= 300 else title[:300] + '…'
+
+
 def build_earnings_alert(item, on_record=None):
     """DART 실패는 기존 알림으로, 매칭/비교자료 실패는 현재 실적만으로 대체한다."""
     if not is_earnings_disclosure(item.get('title', '')):
         return None
-    receipt = parse_qs(urlparse(item.get('link', '')).query).get('rcpNo', [''])[0]
-    if not re.fullmatch(r'\d{14}', receipt):
+    receipt = _receipt(item)
+    if not receipt:
         return None
     link = f'https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}'
     opener = build_opener(HTTPCookieProcessor(CookieJar()))
     try:
-        main = _fetch(opener, link)
-        doc = re.search(r'viewDoc\(\s*[\'"]' + receipt + r'[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"](\d+)[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]', main)
-        if not doc:
-            raise ValueError('DART 본문 위치를 찾지 못했습니다.')
-        params = dict(zip(('dcmNo', 'eleId', 'offset', 'length', 'dtd'), doc.groups()))
-        params['rcpNo'] = receipt
-        body = _fetch(opener, 'https://dart.fss.or.kr/report/viewer.do?' + urlencode(params), link)
+        main, body = fetch_dart_document(opener, receipt)
         earnings = parse_dart(main, body)
     except Exception as error:
         logger.warning('잠정실적 본문 보강 실패, 기존 공시 알림 사용: %s', error)
