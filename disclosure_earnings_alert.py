@@ -26,8 +26,8 @@ def is_earnings_disclosure(title):
 
 
 def is_periodic_report(title):
-    """분기·반기보고서. 사업보고서는 4분기 단독 실적이 본문에 없어 제외한다."""
-    return bool(re.search(r'(분기|반기)\s*보고서', html.unescape(title)))
+    """분기·반기·사업보고서. 사업보고서는 연간에서 3분기 누적을 빼 4분기 단독 실적을 만든다."""
+    return bool(re.search(r'(분기|반기|사업)\s*보고서', html.unescape(title)))
 
 
 def is_earnings_report(title):
@@ -228,13 +228,13 @@ def parse_wise_quarters(source, target, consolidated):
     return historical, consensus
 
 
-def _fetch(opener, url, referer=None):
+def _fetch(opener, url, referer=None, data=None):
     headers = {'User-Agent': 'Mozilla/5.0'}
     if referer:
         headers['Referer'] = referer
     for attempt in range(2):
         try:
-            with opener.open(Request(url, headers=headers), timeout=8) as response:
+            with opener.open(Request(url, data=data, headers=headers), timeout=8) as response:
                 raw = response.read()
                 charset = response.headers.get_content_charset()
             break
@@ -327,6 +327,9 @@ def format_earnings(earnings, link, code=None, wise=None):
         expected = wise.get('consensus', {}).get(metric)
         comparison = _surprise(actual, expected)
         lines.append(f'{LABELS[metric]} : {_amount(actual)}(예상치 : {_amount(expected)}{comparison})')
+    if earnings.get('annual'):
+        annual = earnings['annual']
+        lines.append(f"{earnings['period'][0]}년 연간 : " + ' / '.join(_amount(annual.get(m)) for m in METRICS))
     history_basis = f'당기 {basis} / 과거 {reference_basis}' if mixed_basis else f'{basis}기준'
     lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익']
     period = earnings['period']
@@ -337,6 +340,8 @@ def format_earnings(earnings, link, code=None, wise=None):
         row_basis = f'({basis if offset == 0 else reference_basis})' if mixed_basis else ''
         lines.append(f'{previous[0]}.{previous[1]}Q{row_basis} ' + ' / '.join(_amount(values.get(m)) for m in METRICS))
     lines.append('')
+    if earnings.get('annual'):
+        lines.append(f'※ {period[1]}Q 실적 = 사업보고서 연간 - 3분기보고서 누적')
     if wise:
         lines.append(f'※ 예상치: WiseReport K-IFRS({reference_basis}) 기준')
         if wise.get('market_date') and wise.get('market_cap') is not None:
@@ -363,8 +368,9 @@ def _statement_label(text):
     return re.sub(r'\(주석[^)]*\)$', '', label)
 
 
-def parse_income_statement(section_html):
-    """정기보고서 손익계산서에서 분기 단독(3개월) 매출·영업이익·순이익(억원)과 분기를 읽는다."""
+def parse_income_statement(section_html, cumulative=False):
+    """정기보고서 손익계산서에서 분기 단독(3개월) 매출·영업이익·순이익(억원)과 분기를 읽는다.
+    cumulative=True면 분기보고서의 누적 열을, 사업보고서(12월 결산)는 연간 열을 읽고 (연도, 4)를 돌려준다."""
     start = re.search(r'(포괄)?\s*손\s*익\s*계\s*산\s*서', section_html)
     if not start:
         raise ValueError('손익계산서를 찾지 못했습니다.')
@@ -376,9 +382,11 @@ def parse_income_statement(section_html):
     span = re.search(r'(\d{4})[.-](\d{2})[.-](\d{2})\s*부터\s*(\d{4})[.-](\d{2})[.-](\d{2})\s*까지', text)
     if not span:
         raise ValueError('손익계산서 기간을 확인하지 못했습니다.')
-    finish = date(*map(int, span.groups()[3:]))
-    if finish.month not in (3, 6, 9) or finish.day != calendar.monthrange(finish.year, finish.month)[1]:
-        raise ValueError('분기 말 기준 손익계산서가 아닙니다.')
+    begin, finish = date(*map(int, span.groups()[:3])), date(*map(int, span.groups()[3:]))
+    annual = finish.month == 12 and finish.day == 31 and (begin.month, begin.day) == (1, 1)
+    if not annual and (finish.month not in (3, 6, 9)
+                       or finish.day != calendar.monthrange(finish.year, finish.month)[1]):
+        raise ValueError('분기 말 또는 12월 결산 기준 손익계산서가 아닙니다.')
     unit = re.search(r'단위\s*[:：]\s*(백만원|천원|억원|원)', text)
     if not unit:
         raise ValueError('손익계산서 금액 단위를 확인하지 못했습니다.')
@@ -394,10 +402,13 @@ def parse_income_statement(section_html):
     quarter_row = next((row for row in headers
                         if any(re.sub(r'\s+', '', c['text']) == '3개월' for c in row)), None)
     column = offset
-    if quarter_row is not None:
-        column += next(i for i, c in enumerate(quarter_row) if re.sub(r'\s+', '', c['text']) == '3개월')
+    wanted = '누적' if cumulative else '3개월'
+    if annual:
+        pass  # 사업보고서는 첫 금액 열이 당기 연간 실적이다.
+    elif quarter_row is not None:
+        column += next(i for i, c in enumerate(quarter_row) if re.sub(r'\s+', '', c['text']) == wanted)
     elif finish.month != 3:
-        raise ValueError('분기 단독(3개월) 실적 열을 찾지 못했습니다.')
+        raise ValueError(f'{wanted} 실적 열을 찾지 못했습니다.')
     actual = dict.fromkeys(METRICS)
     for row in rows[first_metric:]:
         label = _statement_label(row[0]['text']) if row else ''
@@ -429,6 +440,34 @@ def _statement_candidates(sections, consolidated):
     return exact + whole
 
 
+def _read_statement(sections, consolidated, opener, link, errors, cumulative=False):
+    for params in _statement_candidates(sections, consolidated):
+        try:
+            body = _fetch(opener, 'https://dart.fss.or.kr/report/viewer.do?' + urlencode(params), link)
+            return parse_income_statement(body, cumulative)
+        except Exception as error:
+            errors.append(str(error))
+    return None
+
+
+def find_third_quarter_report(opener, main_html, year):
+    """같은 회사의 해당 연도 3분기보고서 접수번호를 DART 상세검색에서 찾는다(정정본이 있으면 최신)."""
+    corp_ids = set(re.findall(r"""openCorpInfoNew\(\s*['"](\d{8})['"]""", main_html))
+    if len(corp_ids) != 1:
+        raise ValueError('사업보고서의 DART 기업코드를 확인하지 못했습니다.')
+    data = urlencode({'currentPage': 1, 'maxResults': 15, 'textCrpCik': corp_ids.pop(),
+                      'startDate': f'{year}1001', 'endDate': f'{year + 1}1231',
+                      'publicType': 'A003'}).encode()
+    source = _fetch(opener, 'https://dart.fss.or.kr/dsab007/detailSearch.ax',
+                    'https://dart.fss.or.kr/dsab007/main.do', data)
+    for row in source.split('<tr')[1:]:
+        if re.search(rf'분기보고서\s*\(\s*{year}\.09\s*\)', _text(row)):
+            receipt = re.search(r'rcpNo=(\d{14})', row)
+            if receipt:
+                return receipt[1]
+    raise ValueError(f'{year}년 3분기보고서를 찾지 못했습니다.')
+
+
 def parse_periodic_report(item, main_html, opener):
     """정기보고서는 연결재무제표가 있으면 연결, '해당사항 없음'이면 별도(개별) 기준으로 읽는다."""
     title = re.search(r'<title[^>]*>(.*?)</title>', main_html, re.I | re.S)
@@ -439,16 +478,27 @@ def parse_periodic_report(item, main_html, opener):
     link = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={sections[0][1]['rcpNo'] if sections else ''}"
     errors = []
     for consolidated in (True, False):
-        for params in _statement_candidates(sections, consolidated):
-            try:
-                body = _fetch(opener, 'https://dart.fss.or.kr/report/viewer.do?' + urlencode(params), link)
-                period, actual = parse_income_statement(body)
-            except Exception as error:
-                errors.append(str(error))
-                continue
-            report = re.sub(r'^\s*(\([^)]*\))?\s*.*?\s+-\s+', '', html.unescape(item.get('title', ''))).strip()
-            return {'company': parts[0].strip(), 'report': report or parts[1].strip(), 'period': period,
+        statement = _read_statement(sections, consolidated, opener, link, errors)
+        if statement is None:
+            continue
+        period, actual = statement
+        report = re.sub(r'^\s*(\([^)]*\))?\s*.*?\s+-\s+', '', html.unescape(item.get('title', ''))).strip()
+        earnings = {'company': parts[0].strip(), 'report': report or parts[1].strip(), 'period': period,
                     'consolidated': consolidated, 'actual': actual}
+        if period[1] == 4:
+            # 4분기 단독 = 연간 - 같은 기준(연결/별도) 3분기 누적.
+            receipt = find_third_quarter_report(opener, main_html, period[0])
+            quarter_link = f'https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}'
+            quarter_sections = _report_sections(_fetch(opener, quarter_link))
+            nine_months = _read_statement(quarter_sections, consolidated, opener, quarter_link, errors, True)
+            if nine_months is None or nine_months[0] != (period[0], 3):
+                raise ValueError('3분기 누적 실적을 읽지 못했습니다: ' + '; '.join(errors[-2:]))
+            earnings['annual'] = actual
+            earnings['actual'] = {
+                metric: actual[metric] - nine_months[1][metric]
+                if actual[metric] is not None and nine_months[1][metric] is not None else None
+                for metric in METRICS}
+        return earnings
     raise ValueError('정기보고서 손익계산서를 읽지 못했습니다: ' + '; '.join(errors[-2:]))
 
 
@@ -545,7 +595,7 @@ def build_earnings_alert(item, on_record=None):
             'reference_consolidated': reference.get('consolidated'),
             'market_cap': reference.get('market_cap'), 'market_date': reference.get('market_date'),
             'reference_fetched_at': datetime.now(timezone(timedelta(hours=9))).isoformat() if wise else None,
-            'history': history,
+            'history': history, 'annual': earnings.get('annual'),
         })
     # HTML 태그/엔티티를 중간에서 자르지 않고 기존 알림으로 대체한다.
     return message if len(message.encode('utf-16-le')) // 2 <= 4000 else None
