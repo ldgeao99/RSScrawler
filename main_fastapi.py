@@ -33,7 +33,7 @@ import batch_logger
 from disclosure_earnings_alert import (
     build_earnings_alert,
     fetch_fair_disclosure_title,
-    is_earnings_disclosure,
+    is_earnings_report,
     is_fair_disclosure,
 )
 import disclosure_earnings_store
@@ -230,7 +230,7 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
                 text = f'{emoji} {title}\n- {html.escape(fair_title)}\n\n{link}\n​'
 
         earnings_record = {}
-        archive_earnings = is_disclosure and is_earnings_disclosure(raw_title)
+        archive_earnings = is_disclosure and is_earnings_report(raw_title)
         if is_disclosure:
             try:
                 earnings_text = build_earnings_alert(item, on_record=earnings_record.update)

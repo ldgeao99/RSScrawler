@@ -181,7 +181,7 @@ class EarningsAlertTest(unittest.TestCase):
         namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', html=html,
                          shorten_telegram_link=lambda link: link,
                          SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
-                         is_earnings_disclosure=alert.is_earnings_disclosure,
+                         is_earnings_report=alert.is_earnings_report,
                          is_fair_disclosure=alert.is_fair_disclosure,
                          fetch_fair_disclosure_title=Mock(return_value='배당 & 자사주 계획'),
                          disclosure_earnings_store=Mock(),
