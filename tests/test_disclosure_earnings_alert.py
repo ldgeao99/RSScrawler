@@ -183,6 +183,8 @@ class EarningsAlertTest(unittest.TestCase):
                          SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
                          is_earnings_report=alert.is_earnings_report,
                          is_fair_disclosure=alert.is_fair_disclosure,
+                         is_supply_contract=lambda title: '공급계약체결' in title,
+                         fetch_supply_contract_summary=Mock(return_value='* 계약금액 : 712억'),
                          fetch_fair_disclosure_title=Mock(return_value='배당 & 자사주 계획'),
                          disclosure_earnings_store=Mock(),
                          build_earnings_alert=builder, requests=request, time=Mock(), logger=Mock())
@@ -222,6 +224,13 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🔵📢 {fair["title"]}\n\n{LINK}\n\u200b')
         send([{**fair, 'sentiment': 'positive'}], is_disclosure=True)
         self.assertTrue(request.post.call_args.kwargs['json']['text'].startswith('🟢📢 '))
+        contract = {'title': '(유가)후성 - 단일판매ㆍ공급계약체결', 'link': LINK, 'sentiment': 'positive'}
+        send([contract], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['text'],
+                         f'🟢📢 {contract["title"]}\n\n* 계약금액 : 712억\n\n\n{LINK}\n\u200b')
+        namespace['fetch_supply_contract_summary'].return_value = None
+        send([contract], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🟢📢 {contract["title"]}\n\n{LINK}\n\u200b')
         namespace['fetch_fair_disclosure_title'].reset_mock()
         send([{**fair, 'sentiment': 'negative'}], is_global=True)
         namespace['fetch_fair_disclosure_title'].assert_not_called()

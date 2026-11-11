@@ -37,6 +37,7 @@ from disclosure_earnings_alert import (
     is_fair_disclosure,
 )
 import disclosure_earnings_store
+from disclosure_contract_alert import fetch_supply_contract_summary, is_supply_contract
 
 from fastapi import FastAPI, Body, HTTPException, Request, status
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -228,6 +229,11 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
             fair_title = fetch_fair_disclosure_title(item)
             if fair_title:
                 text = f'{emoji} {title}\n- {html.escape(fair_title)}\n\n{link}\n​'
+        # 단일판매ㆍ공급계약체결은 DART 본문의 계약금액(억원)·매출액대비·계약상대·계약기간을 덧붙인다.
+        if is_disclosure and is_supply_contract(raw_title):
+            contract_summary = fetch_supply_contract_summary(item)
+            if contract_summary:
+                text = f'{emoji} {title}\n\n{contract_summary}\n\n\n{link}\n​'
 
         earnings_record = {}
         archive_earnings = is_disclosure and is_earnings_report(raw_title)
