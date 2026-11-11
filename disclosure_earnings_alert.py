@@ -306,6 +306,14 @@ def _surprise(actual, expected):
     return f' / {difference:+.0f}%'
 
 
+def _margin(values):
+    revenue, operating = values.get('revenue'), values.get('operating_profit')
+    if revenue is None or operating is None or revenue <= 0:
+        return '(-)'
+    margin = (operating / revenue * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+    return f'({abs(margin) if margin == 0 else margin}%)'
+
+
 def format_earnings(earnings, link, code=None, wise=None):
     wise = wise or {}
     escape = html.escape
@@ -331,14 +339,15 @@ def format_earnings(earnings, link, code=None, wise=None):
         annual = earnings['annual']
         lines.append(f"{earnings['period'][0]}년 연간 : " + ' / '.join(_amount(annual.get(m)) for m in METRICS))
     history_basis = f'당기 {basis} / 과거 {reference_basis}' if mixed_basis else f'{basis}기준'
-    lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익']
+    lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익(영업이익률)']
     period = earnings['period']
     for offset in range(5):
         ordinal = period[0] * 4 + period[1] - 1 - offset
         previous = (ordinal // 4, ordinal % 4 + 1)
         values = earnings['actual'] if offset == 0 else wise.get('history', {}).get(previous, {})
         row_basis = f'({basis if offset == 0 else reference_basis})' if mixed_basis else ''
-        lines.append(f'{previous[0]}.{previous[1]}Q{row_basis} ' + ' / '.join(_amount(values.get(m)) for m in METRICS))
+        lines.append(f'{previous[0]}.{previous[1]}Q{row_basis} ' + ' / '.join(_amount(values.get(m)) for m in METRICS)
+                     + _margin(values))
     lines.append('')
     if earnings.get('annual'):
         lines.append(f'※ {period[1]}Q 실적 = 사업보고서 연간 - 3분기보고서 누적')
