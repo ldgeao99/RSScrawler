@@ -339,7 +339,7 @@ def format_earnings(earnings, link, code=None, wise=None):
         annual = earnings['annual']
         lines.append(f"{earnings['period'][0]}년 연간 : " + ' / '.join(_amount(annual.get(m)) for m in METRICS))
     history_basis = f'당기 {basis} / 과거 {reference_basis}' if mixed_basis else f'{basis}기준'
-    lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 당기순이익(영업이익률)']
+    lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 순이익(영업이익률)']
     period = earnings['period']
     for offset in range(5):
         ordinal = period[0] * 4 + period[1] - 1 - offset

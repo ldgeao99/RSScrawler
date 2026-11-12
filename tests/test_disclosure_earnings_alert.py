@@ -98,7 +98,7 @@ class EarningsAlertTest(unittest.TestCase):
             self.assertIn(expected, message)
         self.assertTrue(message.startswith(
             '하나투어 - 연결재무제표기준영업(잠정)실적(공정공시)\n(시가총액: 4,306억) A039130\n\n'))
-        self.assertIn('\n**최근 실적 추이(연결기준)**\n매출액 / 영업익 / 당기순이익(영업이익률)\n', message)
+        self.assertIn('\n**최근 실적 추이(연결기준)**\n매출액 / 영업익 / 순이익(영업이익률)\n', message)
         self.assertNotIn('<b>', message)
         self.assertIn('※ 예상치: WiseReport K-IFRS(연결) 기준\n※ 시가총액 기준일: 2026.11.02', message)
         self.assertIn('공시링크:\n' + LINK, message)
