@@ -316,6 +316,23 @@ def _margin(values):
     return f'({abs(margin) if margin == 0 else margin}%)'
 
 
+def _growth(current, previous):
+    """영업이익 증감률. 부호가 바뀌거나 적자가 이어지면 %가 의미 없어 흑자전환/적자전환/적자지속으로 표시한다."""
+    if current is None or previous is None or previous == 0:
+        return '-'
+    if previous < 0:
+        return '흑자전환' if current >= 0 else '적자지속'
+    if current < 0:
+        return '적자전환'
+    change = ((current - previous) / previous * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    return f'{abs(change) if change == 0 else change:+.0f}%'
+
+
+def _shift(period, quarters):
+    ordinal = period[0] * 4 + period[1] - 1 - quarters
+    return ordinal // 4, ordinal % 4 + 1
+
+
 def format_earnings(earnings, link, code=None, wise=None):
     wise = wise or {}
     escape = html.escape
@@ -340,6 +357,11 @@ def format_earnings(earnings, link, code=None, wise=None):
     if earnings.get('annual'):
         annual = earnings['annual']
         lines.append(f"{earnings['period'][0]}년 연간 : " + ' / '.join(_amount(annual.get(m)) for m in METRICS))
+    history = wise.get('history', {})
+    operating = earnings['actual'].get('operating_profit')
+    yoy = _growth(operating, history.get(_shift(earnings['period'], 4), {}).get('operating_profit'))
+    qoq = _growth(operating, history.get(_shift(earnings['period'], 1), {}).get('operating_profit'))
+    lines += ['', f'영업익 YoY 대비 : {yoy}, QoQ 대비 : {qoq}']
     history_basis = f'당기 {basis} / 과거 {reference_basis}' if mixed_basis else f'{basis}기준'
     lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 순이익(영업이익률)']
     period = earnings['period']
