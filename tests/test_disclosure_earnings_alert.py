@@ -179,7 +179,7 @@ class EarningsAlertTest(unittest.TestCase):
         request.post.return_value.status_code = 200
         request.post.return_value.json.return_value = {'ok': True}
         builder = Mock(return_value='rich earnings')
-        namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', html=html,
+        namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', TELEGRAM_DISCLOSURE_CHAT_ID='', html=html,
                          shorten_telegram_link=lambda link: link,
                          SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
                          is_earnings_report=alert.is_earnings_report,
@@ -232,6 +232,17 @@ class EarningsAlertTest(unittest.TestCase):
         namespace['fetch_supply_contract_summary'].return_value = None
         send([contract], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'], f'🟢📢 {contract["title"]}\n\n{LINK}\n\u200b')
+        # 공시 전용 채널이 설정되면 공시만 그 채널로, 뉴스는 기존 채널로 보낸다.
+        namespace['TELEGRAM_DISCLOSURE_CHAT_ID'] = 'disclosure'
+        send([fair], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'disclosure')
+        send([fair], is_global=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'test')
+        send([fair])
+        self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'test')
+        namespace['TELEGRAM_DISCLOSURE_CHAT_ID'] = ''
+        send([fair], is_disclosure=True)
+        self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'test')
         namespace['fetch_fair_disclosure_title'].reset_mock()
         send([{**fair, 'sentiment': 'negative'}], is_global=True)
         namespace['fetch_fair_disclosure_title'].assert_not_called()

@@ -115,8 +115,16 @@ class DisclosureScheduleTest(unittest.TestCase):
         self.assertIn('2026-10-30 | DL이앤씨 실적발표', text)
         self.assertIn('2026-11-12 | 컴투스 (잠정)실적발표', text)
         self.assertNotIn('http', text)
+        self.assertEqual(json.loads(send.call_args.args[0].data)['chat_id'], 'test')
         for snap in snapshots:
             snap.reference.update.assert_called_once_with({'disclosureNotificationPending': False})
+        for snap in snapshots:
+            snap.reference.update.reset_mock()
+        with patch.dict('os.environ', TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test',
+                        TELEGRAM_DISCLOSURE_CHAT_ID='disclosure'), \
+                patch.object(extraction, 'urlopen', return_value=response) as send:
+            extraction._send_pending(collection)
+        self.assertEqual(json.loads(send.call_args.args[0].data)['chat_id'], 'disclosure')
 
     def test_auto_reads_only_today_kst_from_live_filtered_feed(self):
         with tempfile.TemporaryDirectory() as directory:

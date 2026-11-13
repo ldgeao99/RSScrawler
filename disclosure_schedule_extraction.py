@@ -90,7 +90,8 @@ def fetch_announcement(item):
 
 
 def _send_pending(collection):
-    token, chat = os.getenv('TELEGRAM_BOT_TOKEN'), os.getenv('TELEGRAM_CHAT_ID')
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    chat = os.getenv('TELEGRAM_DISCLOSURE_CHAT_ID') or os.getenv('TELEGRAM_CHAT_ID')
     pending = list(collection.where('disclosureNotificationPending', '==', True).stream())
     if pending and (not token or not chat):
         raise RuntimeError('텔레그램 설정이 없어 신규 일정 알림을 보류합니다.')
