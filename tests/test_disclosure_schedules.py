@@ -121,10 +121,11 @@ class DisclosureScheduleTest(unittest.TestCase):
         for snap in snapshots:
             snap.reference.update.reset_mock()
         with patch.dict('os.environ', TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test',
-                        TELEGRAM_DISCLOSURE_CHAT_ID='disclosure'), \
+                        TELEGRAM_DISCLOSURE_CHAT_ID='disclosure', TELEGRAM_DISCLOSURE_BOT_TOKEN='disclosure-bot'), \
                 patch.object(extraction, 'urlopen', return_value=response) as send:
             extraction._send_pending(collection)
         self.assertEqual(json.loads(send.call_args.args[0].data)['chat_id'], 'disclosure')
+        self.assertIn('/botdisclosure-bot/', send.call_args.args[0].full_url)
 
     def test_auto_reads_only_today_kst_from_live_filtered_feed(self):
         with tempfile.TemporaryDirectory() as directory:

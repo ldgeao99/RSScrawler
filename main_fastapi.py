@@ -110,6 +110,15 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 # 기업공시 알림 전용 채널(키워드 공시 레이더). 비어 있으면 기존 채널(TELEGRAM_CHAT_ID)로 보낸다.
 TELEGRAM_DISCLOSURE_CHAT_ID = os.environ.get("TELEGRAM_DISCLOSURE_CHAT_ID", "")
+# 공시 채널 전용 봇 토큰. 비어 있으면 TELEGRAM_BOT_TOKEN 봇이 공시 채널에도 보낸다.
+TELEGRAM_DISCLOSURE_BOT_TOKEN = os.environ.get("TELEGRAM_DISCLOSURE_BOT_TOKEN", "")
+
+
+def telegram_target(is_disclosure=False):
+    """(봇 토큰, 채팅 ID). 공시 채널이 설정된 경우에만 공시 전용 봇/채널을 쓴다."""
+    if is_disclosure and TELEGRAM_DISCLOSURE_CHAT_ID:
+        return TELEGRAM_DISCLOSURE_BOT_TOKEN or TELEGRAM_BOT_TOKEN, TELEGRAM_DISCLOSURE_CHAT_ID
+    return TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 def send_server_restart_notification():
     """별도 스레드에서 서버 시작 알림을 전송한다."""
@@ -205,8 +214,8 @@ def shorten_telegram_link(link: str) -> str:
 
 def send_telegram_notification(items, is_global=False, is_disclosure=False):
     """키워드 포착된 신규 기사를 텔레그램으로 실시간 전송. 설정 없으면 조용히 스킵."""
-    chat_id = (TELEGRAM_DISCLOSURE_CHAT_ID or TELEGRAM_CHAT_ID) if is_disclosure else TELEGRAM_CHAT_ID
-    if not TELEGRAM_BOT_TOKEN or not chat_id or not items:
+    bot_token, chat_id = telegram_target(is_disclosure)
+    if not bot_token or not chat_id or not items:
         return
 
     # 💡 여러 건을 한 메시지에 묶으면 모바일 푸시 미리보기엔 첫 건만 보여서, 건마다 별도 메시지로 보낸다.
@@ -253,7 +262,7 @@ def send_telegram_notification(items, is_global=False, is_disclosure=False):
         delivery_status = 'failed'
         try:
             resp = requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
                 json={
                     "chat_id": chat_id,
                     "text": text,

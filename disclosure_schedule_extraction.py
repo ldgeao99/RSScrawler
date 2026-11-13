@@ -90,8 +90,12 @@ def fetch_announcement(item):
 
 
 def _send_pending(collection):
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    chat = os.getenv('TELEGRAM_DISCLOSURE_CHAT_ID') or os.getenv('TELEGRAM_CHAT_ID')
+    # 공시 채널이 설정되면 공시 전용 봇(없으면 기본 봇)으로 그 채널에 보낸다.
+    if os.getenv('TELEGRAM_DISCLOSURE_CHAT_ID'):
+        token = os.getenv('TELEGRAM_DISCLOSURE_BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+        chat = os.getenv('TELEGRAM_DISCLOSURE_CHAT_ID')
+    else:
+        token, chat = os.getenv('TELEGRAM_BOT_TOKEN'), os.getenv('TELEGRAM_CHAT_ID')
     pending = list(collection.where('disclosureNotificationPending', '==', True).stream())
     if pending and (not token or not chat):
         raise RuntimeError('텔레그램 설정이 없어 신규 일정 알림을 보류합니다.')

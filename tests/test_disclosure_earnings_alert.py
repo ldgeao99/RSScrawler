@@ -173,13 +173,13 @@ class EarningsAlertTest(unittest.TestCase):
 
     def test_telegram_dispatch_preserves_original_alert_on_failure_and_other_feeds(self):
         tree = ast.parse((Path(__file__).resolve().parents[1] / 'main_fastapi.py').read_text())
-        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
-                        and n.name == 'send_telegram_notification')
+        functions = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+                     and n.name in ('telegram_target', 'send_telegram_notification')]
         request = Mock()
         request.post.return_value.status_code = 200
         request.post.return_value.json.return_value = {'ok': True}
         builder = Mock(return_value='rich earnings')
-        namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', TELEGRAM_DISCLOSURE_CHAT_ID='', html=html,
+        namespace = dict(TELEGRAM_BOT_TOKEN='test', TELEGRAM_CHAT_ID='test', TELEGRAM_DISCLOSURE_CHAT_ID='', TELEGRAM_DISCLOSURE_BOT_TOKEN='', html=html,
                          shorten_telegram_link=lambda link: link,
                          SENTIMENT_EMOJI={'positive': '🟢', 'negative': '🔴'},
                          is_earnings_report=alert.is_earnings_report,
@@ -189,7 +189,7 @@ class EarningsAlertTest(unittest.TestCase):
                          fetch_fair_disclosure_title=Mock(return_value='배당 & 자사주 계획'),
                          disclosure_earnings_store=Mock(),
                          build_earnings_alert=builder, requests=request, time=Mock(), logger=Mock())
-        exec(compile(ast.Module(body=[function], type_ignores=[]), '<dispatch>', 'exec'), namespace)
+        exec(compile(ast.Module(body=functions, type_ignores=[]), '<dispatch>', 'exec'), namespace)
         send = namespace['send_telegram_notification']
         send([{**ITEM, 'sentiment': 'positive'}], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['text'], '🟢📢rich earnings')
@@ -240,9 +240,18 @@ class EarningsAlertTest(unittest.TestCase):
         self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'test')
         send([fair])
         self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'test')
+        self.assertIn('/bottest/', request.post.call_args.args[0])
+        # 공시 전용 봇 토큰은 공시 채널로 보낼 때만 쓴다.
+        namespace['TELEGRAM_DISCLOSURE_BOT_TOKEN'] = 'disclosure-bot'
+        send([fair], is_disclosure=True)
+        self.assertIn('/botdisclosure-bot/', request.post.call_args.args[0])
+        send([fair])
+        self.assertIn('/bottest/', request.post.call_args.args[0])
         namespace['TELEGRAM_DISCLOSURE_CHAT_ID'] = ''
         send([fair], is_disclosure=True)
         self.assertEqual(request.post.call_args.kwargs['json']['chat_id'], 'test')
+        self.assertIn('/bottest/', request.post.call_args.args[0])
+        namespace['TELEGRAM_DISCLOSURE_BOT_TOKEN'] = ''
         namespace['fetch_fair_disclosure_title'].reset_mock()
         send([{**fair, 'sentiment': 'negative'}], is_global=True)
         namespace['fetch_fair_disclosure_title'].assert_not_called()
