@@ -45,6 +45,16 @@ class PeriodicReportTest(unittest.TestCase):
                                   'operating_profit': Decimal('-1.55424842'),
                                   'net_income': Decimal('5.48147982')})
 
+    def test_revenue_line_named_with_other_income_is_recognized(self):
+        source = (FIXTURES / 'lges_consolidated_income.html').read_text(encoding='utf-8')
+        period, actual = alert.parse_income_statement(source)
+        self.assertEqual(period, (2026, 3))
+        self.assertEqual(actual, {'revenue': Decimal('96434.33'), 'operating_profit': Decimal('7560.05'),
+                                  'net_income': Decimal('-2969.06')})
+        revenue = alert._STATEMENT_METRICS[0][1]
+        for label in ('매출원가', '매출총이익'):
+            self.assertIsNone(revenue.match(label))
+
     def test_rejects_empty_or_foreign_currency_statements(self):
         with self.assertRaises(ValueError):
             alert.parse_income_statement(NO_CONSOLIDATED)

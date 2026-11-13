@@ -365,7 +365,7 @@ def format_earnings(earnings, link, code=None, wise=None):
 _UNIT_FACTORS = {'억원': Decimal(1), '백만원': Decimal('0.01'),
                  '천원': Decimal('0.00001'), '원': Decimal('0.00000001')}
 _STATEMENT_METRICS = (
-    ('revenue', re.compile(r'^(매출액|매출|영업수익|수익)(\(.*\))?$')),
+    ('revenue', re.compile(r'^(매출액|매출|영업수익|수익)(\(.*\)|및.+)?$')),
     ('operating_profit', re.compile(r'^영업(이익|손실|손익)')),
     ('net_income', re.compile(r'^(당기|분기|반기)?순(이익|손실|손익)')),
 )
