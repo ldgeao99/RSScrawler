@@ -90,7 +90,9 @@ class PeriodicReportTest(unittest.TestCase):
         self.assertTrue(message.startswith('에스켐 - 분기보고서 (2026.09)\n'))
         self.assertIn('매출액 : 53억', message)
         self.assertIn('최근 실적 추이(별도기준)', message)
-        self.assertIn('2026.3Q 53억 / -5억 / -8억(-10.3%)', message)
+        self.assertIn('2026.3Q 53억 / -5억 / -8억(-%)', message)
+        self.assertEqual(alert._margin({'revenue': Decimal(100), 'operating_profit': Decimal('-0.01')}), '(-%)')
+        self.assertEqual(alert._margin({'revenue': Decimal(100), 'operating_profit': Decimal(0)}), '(0.0%)')
         self.assertEqual(alert._margin({'revenue': None, 'operating_profit': Decimal(1)}), '(-)')
         self.assertEqual(alert._margin({'revenue': Decimal(0), 'operating_profit': Decimal(1)}), '(-)')
 

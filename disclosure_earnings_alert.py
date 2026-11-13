@@ -310,6 +310,8 @@ def _margin(values):
     revenue, operating = values.get('revenue'), values.get('operating_profit')
     if revenue is None or operating is None or revenue <= 0:
         return '(-)'
+    if operating < 0:
+        return '(-%)'  # 영업적자는 이익률을 계산하지 않는다.
     margin = (operating / revenue * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
     return f'({abs(margin) if margin == 0 else margin}%)'
 
