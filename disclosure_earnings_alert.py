@@ -361,7 +361,7 @@ def format_earnings(earnings, link, code=None, wise=None):
     operating = earnings['actual'].get('operating_profit')
     yoy = _growth(operating, history.get(_shift(earnings['period'], 4), {}).get('operating_profit'))
     qoq = _growth(operating, history.get(_shift(earnings['period'], 1), {}).get('operating_profit'))
-    lines += ['', f'영업익 YoY 대비 : {yoy}, QoQ 대비 : {qoq}']
+    lines += ['', f'영업익 YoY 대비 : {yoy}', f'영업익 QoQ 대비 : {qoq}']
     history_basis = f'당기 {basis} / 과거 {reference_basis}' if mixed_basis else f'{basis}기준'
     lines += ['', f'**최근 실적 추이({history_basis})**', '매출액 / 영업익 / 순이익(영업이익률)']
     period = earnings['period']
