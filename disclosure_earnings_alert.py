@@ -397,7 +397,8 @@ _STATEMENT_METRICS = (
 
 def _statement_label(text):
     label = re.sub(r'\s+', '', text)
-    label = re.sub(r'^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+|[IVX]+|\d+|[가-하])[.)]', '', label)
+    # 행 번호는 로마숫자 기호(Ⅻ)와 영문(XII)이 섞여 'XⅡ.'처럼 쓰이기도 한다.
+    label = re.sub(r'^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫIVX]+|\d+|[가-하])[.)]', '', label)
     return re.sub(r'\(주석[^)]*\)$', '', label)
 
 

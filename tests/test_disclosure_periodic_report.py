@@ -63,6 +63,14 @@ class PeriodicReportTest(unittest.TestCase):
         for label in ('영업외손익', '영업수익', '영업비용'):
             self.assertIsNone(operating.match(label))
 
+    def test_mixed_roman_numeral_row_numbers_are_stripped(self):
+        # 에넥스: 'XⅡ.당기순이익(손실)'처럼 영문 X와 로마숫자 기호 Ⅱ가 섞인 행 번호
+        source = (FIXTURES / 'enex_consolidated_income.html').read_text(encoding='utf-8')
+        _, actual = alert.parse_income_statement(source)
+        self.assertEqual(actual, {'revenue': Decimal('455.89098025'), 'operating_profit': Decimal('-19.03393556'),
+                                  'net_income': Decimal('-19.72031768')})
+        self.assertEqual(alert._statement_label('XⅡ.당기순이익(손실)'), '당기순이익(손실)')
+
     def test_rejects_empty_or_foreign_currency_statements(self):
         with self.assertRaises(ValueError):
             alert.parse_income_statement(NO_CONSOLIDATED)
