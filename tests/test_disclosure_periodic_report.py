@@ -55,6 +55,14 @@ class PeriodicReportTest(unittest.TestCase):
         for label in ('매출원가', '매출총이익'):
             self.assertIsNone(revenue.match(label))
 
+    def test_operating_profit_named_operating_net_income_is_recognized(self):
+        # 일부 회사는 영업이익 행을 '영업순손익'으로 공시한다. '영업외손익'은 영업이익이 아니다.
+        _, actual = alert.parse_income_statement(SEPARATE_INCOME.replace('영업이익(손실)', '영업순손익'))
+        self.assertEqual(actual['operating_profit'], Decimal('-5.48894110'))
+        operating = dict(alert._STATEMENT_METRICS)['operating_profit']
+        for label in ('영업외손익', '영업수익', '영업비용'):
+            self.assertIsNone(operating.match(label))
+
     def test_rejects_empty_or_foreign_currency_statements(self):
         with self.assertRaises(ValueError):
             alert.parse_income_statement(NO_CONSOLIDATED)
