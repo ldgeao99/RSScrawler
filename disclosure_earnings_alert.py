@@ -333,6 +333,16 @@ def _shift(period, quarters):
     return ordinal // 4, ordinal % 4 + 1
 
 
+def _merged_history(earnings, wise):
+    """WiseReport 과거 실적에 DART 보강분(WiseReport에 비어 있던 분기만)을 합친다."""
+    merged = dict((wise or {}).get('history', {}))
+    used = {}
+    for period, values in (earnings.get('history_fallback') or {}).items():
+        if not _has_values(merged.get(period)) and _has_values(values):
+            merged[period] = used[period] = values
+    return merged, used
+
+
 def format_earnings(earnings, link, code=None, wise=None):
     wise = wise or {}
     escape = html.escape
@@ -357,7 +367,7 @@ def format_earnings(earnings, link, code=None, wise=None):
     if earnings.get('annual'):
         annual = earnings['annual']
         lines.append(f"{earnings['period'][0]}년 연간 : " + ' / '.join(_amount(annual.get(m)) for m in METRICS))
-    history = wise.get('history', {})
+    history, fallback = _merged_history(earnings, wise)
     operating = earnings['actual'].get('operating_profit')
     yoy = _growth(operating, history.get(_shift(earnings['period'], 4), {}).get('operating_profit'))
     qoq = _growth(operating, history.get(_shift(earnings['period'], 1), {}).get('operating_profit'))
@@ -368,13 +378,17 @@ def format_earnings(earnings, link, code=None, wise=None):
     for offset in range(5):
         ordinal = period[0] * 4 + period[1] - 1 - offset
         previous = (ordinal // 4, ordinal % 4 + 1)
-        values = earnings['actual'] if offset == 0 else wise.get('history', {}).get(previous, {})
-        row_basis = f'({basis if offset == 0 else reference_basis})' if mixed_basis else ''
+        values = earnings['actual'] if offset == 0 else history.get(previous, {})
+        own_basis = offset == 0 or previous in fallback
+        row_basis = f'({basis if own_basis else reference_basis})' if mixed_basis else ''
         lines.append(f'{previous[0]}.{previous[1]}Q{row_basis} ' + ' / '.join(_amount(values.get(m)) for m in METRICS)
                      + _margin(values))
     lines.append('')
     if earnings.get('annual'):
         lines.append(f'※ {period[1]}Q 실적 = 사업보고서 연간 - 3분기보고서 누적')
+    if fallback:
+        quarters = ', '.join(f'{y}.{q}Q' for y, q in sorted(fallback, reverse=True))
+        lines.append(f'※ {quarters}: WiseReport 미제공으로 DART 공시 값 사용')
     if wise:
         lines.append(f'※ 예상치: WiseReport K-IFRS({reference_basis}) 기준')
         if wise.get('market_date') and wise.get('market_cap') is not None:
@@ -402,16 +416,17 @@ def _statement_label(text):
     return re.sub(r'\(주석[^)]*\)$', '', label)
 
 
-def parse_income_statement(section_html, cumulative=False):
+def parse_income_statement(section_html, cumulative=False, prior=False):
     """정기보고서 손익계산서에서 분기 단독(3개월) 매출·영업이익·순이익(억원)과 분기를 읽는다.
-    cumulative=True면 분기보고서의 누적 열을, 사업보고서(12월 결산)는 연간 열을 읽고 (연도, 4)를 돌려준다."""
+    cumulative=True면 분기보고서의 누적 열을, 사업보고서(12월 결산)는 연간 열을 읽고 (연도, 4)를 돌려준다.
+    prior=True면 같은 표의 전년 동기 열(전기)을 읽는다. 돌려주는 기간은 당기 기준이다."""
     start = re.search(r'(포괄)?\s*손\s*익\s*계\s*산\s*서', section_html)
     if not start:
         raise ValueError('손익계산서를 찾지 못했습니다.')
     end = re.search(r'자\s*본\s*변\s*동\s*표', section_html[start.end():])
     source = section_html[start.start():start.end() + end.start() if end else len(section_html)]
     text = _text(source)
-    if re.search(r'해당\s*사항\s*(이\s*)?없음', text[:300]):
+    if re.search(r'해당\s*사항\s*(이\s*)?없', text[:300]):
         raise ValueError('손익계산서가 해당사항 없음입니다.')
     span = re.search(r'(\d{4})[.-](\d{2})[.-](\d{2})\s*부터\s*(\d{4})[.-](\d{2})[.-](\d{2})\s*까지', text)
     if not span:
@@ -437,11 +452,14 @@ def parse_income_statement(section_html, cumulative=False):
                         if any(re.sub(r'\s+', '', c['text']) == '3개월' for c in row)), None)
     column = offset
     wanted = '누적' if cumulative else '3개월'
-    if annual:
-        pass  # 사업보고서는 첫 금액 열이 당기 연간 실적이다.
-    elif quarter_row is not None:
-        column += next(i for i, c in enumerate(quarter_row) if re.sub(r'\s+', '', c['text']) == wanted)
-    elif finish.month != 3:
+    if quarter_row is not None and not annual:
+        matches = [i for i, c in enumerate(quarter_row) if re.sub(r'\s+', '', c['text']) == wanted]
+        if len(matches) <= int(prior):
+            raise ValueError(f'{"전기 " if prior else ""}{wanted} 실적 열을 찾지 못했습니다.')
+        column += matches[int(prior)]
+    elif annual or finish.month == 3:
+        column += int(prior)  # 사업보고서·1분기보고서는 당기, 전기 순으로 한 열씩이다.
+    else:
         raise ValueError(f'{wanted} 실적 열을 찾지 못했습니다.')
     actual = dict.fromkeys(METRICS)
     for row in rows[first_metric:]:
@@ -475,31 +493,71 @@ def _statement_candidates(sections, consolidated):
 
 
 def _read_statement(sections, consolidated, opener, link, errors, cumulative=False):
+    """(기간, 실적, 손익계산서 본문)을 돌려준다."""
     for params in _statement_candidates(sections, consolidated):
         try:
             body = _fetch(opener, 'https://dart.fss.or.kr/report/viewer.do?' + urlencode(params), link)
-            return parse_income_statement(body, cumulative)
+            return (*parse_income_statement(body, cumulative), body)
         except Exception as error:
             errors.append(str(error))
     return None
 
 
-def find_third_quarter_report(opener, main_html, year):
-    """같은 회사의 해당 연도 3분기보고서 접수번호를 DART 상세검색에서 찾는다(정정본이 있으면 최신)."""
+def _find_report(opener, main_html, public_type, name, start, end):
+    """같은 회사의 정기보고서 접수번호를 DART 상세검색에서 찾는다(정정본이 있으면 최신)."""
     corp_ids = set(re.findall(r"""openCorpInfoNew\(\s*['"](\d{8})['"]""", main_html))
     if len(corp_ids) != 1:
-        raise ValueError('사업보고서의 DART 기업코드를 확인하지 못했습니다.')
+        raise ValueError('보고서의 DART 기업코드를 확인하지 못했습니다.')
     data = urlencode({'currentPage': 1, 'maxResults': 15, 'textCrpCik': corp_ids.pop(),
-                      'startDate': f'{year}1001', 'endDate': f'{year + 1}1231',
-                      'publicType': 'A003'}).encode()
+                      'startDate': start, 'endDate': end, 'publicType': public_type}).encode()
     source = _fetch(opener, 'https://dart.fss.or.kr/dsab007/detailSearch.ax',
                     'https://dart.fss.or.kr/dsab007/main.do', data)
     for row in source.split('<tr')[1:]:
-        if re.search(rf'분기보고서\s*\(\s*{year}\.09\s*\)', _text(row)):
+        if re.search(name, _text(row)):
             receipt = re.search(r'rcpNo=(\d{14})', row)
             if receipt:
                 return receipt[1]
-    raise ValueError(f'{year}년 3분기보고서를 찾지 못했습니다.')
+    raise ValueError(f'{name} 보고서를 찾지 못했습니다.')
+
+
+def find_third_quarter_report(opener, main_html, year):
+    return _find_report(opener, main_html, 'A003', rf'분기보고서\s*\(\s*{year}\.09\s*\)',
+                        f'{year}1001', f'{year + 1}1231')
+
+
+def find_annual_report(opener, main_html, year):
+    return _find_report(opener, main_html, 'A001', rf'사업보고서\s*\(\s*{year}\.12\s*\)',
+                        f'{year + 1}0101', f'{year + 1}1231')
+
+
+def _subtract(total, part):
+    return {m: total[m] - part[m] if total.get(m) is not None and part.get(m) is not None else None
+            for m in METRICS}
+
+
+def _has_values(values):
+    return any(v is not None for v in (values or {}).values())
+
+
+def dart_history_fallback(earnings, wise, opener, main_html):
+    """WiseReport에 비어 있는 전년 동기·전년 4분기 실적을 DART 공시로 채운다."""
+    history = (wise or {}).get('history', {})
+    year, quarter = earnings['period']
+    fallback = {}
+    if earnings.get('prior_quarter') and not _has_values(history.get((year - 1, quarter))):
+        fallback[(year - 1, quarter)] = earnings['prior_quarter']
+    if earnings.get('prior_cumulative') and quarter == 3 and not _has_values(history.get((year - 1, 4))):
+        # 전년 4분기 = 전년 사업보고서 연간 - 이번 3분기보고서의 전년 누적(1~9월)
+        try:
+            receipt = find_annual_report(opener, main_html, year - 1)
+            annual_link = f'https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}'
+            statement = _read_statement(_report_sections(_fetch(opener, annual_link)),
+                                        earnings['consolidated'], opener, annual_link, [])
+            if statement and statement[0] == (year - 1, 4):
+                fallback[(year - 1, 4)] = _subtract(statement[1], earnings['prior_cumulative'])
+        except Exception as error:
+            logger.warning('전년 4분기 실적 DART 보강 실패: %s', error)
+    return fallback
 
 
 def parse_periodic_report(item, main_html, opener):
@@ -515,10 +573,17 @@ def parse_periodic_report(item, main_html, opener):
         statement = _read_statement(sections, consolidated, opener, link, errors)
         if statement is None:
             continue
-        period, actual = statement
+        period, actual, body = statement
         report = re.sub(r'^\s*(\([^)]*\))?\s*.*?\s+-\s+', '', html.unescape(item.get('title', ''))).strip()
         earnings = {'company': parts[0].strip(), 'report': report or parts[1].strip(), 'period': period,
                     'consolidated': consolidated, 'actual': actual}
+        if period[1] != 4:
+            # WiseReport에 과거 분기가 비어 있을 때 쓰도록 같은 표의 전년 동기·전년 누적 열을 읽어 둔다.
+            for key, cumulative in (('prior_quarter', False), ('prior_cumulative', True)):
+                try:
+                    earnings[key] = parse_income_statement(body, cumulative, prior=True)[1]
+                except ValueError:
+                    pass
         if period[1] == 4:
             # 4분기 단독 = 연간 - 같은 기준(연결/별도) 3분기 누적.
             receipt = find_third_quarter_report(opener, main_html, period[0])
@@ -609,17 +674,23 @@ def build_earnings_alert(item, on_record=None):
         wise = fetch_wise(opener, code, earnings)
     except Exception as error:
         logger.warning('실적 비교자료 보강 실패, DART 실적만 알림: %s', error)
+    try:
+        earnings['history_fallback'] = dart_history_fallback(earnings, wise, opener, main)
+    except Exception as error:
+        logger.warning('과거 실적 DART 보강 실패: %s', error)
     message = format_earnings(earnings, link, code, wise)
     if on_record is not None:
         reference = wise or {}
+        merged, fallback = _merged_history(earnings, wise)
         history = []
         for offset in range(5):
             ordinal = earnings['period'][0] * 4 + earnings['period'][1] - 1 - offset
             period = (ordinal // 4, ordinal % 4 + 1)
             history.append({
                 'period': f'{period[0]}Q{period[1]}',
-                'consolidated': earnings['consolidated'] if offset == 0 else reference.get('consolidated'),
-                'actual': earnings['actual'] if offset == 0 else reference.get('history', {}).get(period, {}),
+                'consolidated': earnings['consolidated'] if offset == 0 or period in fallback
+                else reference.get('consolidated'),
+                'actual': earnings['actual'] if offset == 0 else merged.get(period, {}),
             })
         on_record({
             'company': earnings['company'], 'code': code, 'report': earnings['report'],

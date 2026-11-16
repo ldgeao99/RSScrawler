@@ -71,6 +71,26 @@ class PeriodicReportTest(unittest.TestCase):
                                   'net_income': Decimal('-19.72031768')})
         self.assertEqual(alert._statement_label('XⅡ.당기순이익(손실)'), '당기순이익(손실)')
 
+    def test_prior_year_columns_and_fallback_only_fill_missing_quarters(self):
+        _, prior_quarter = alert.parse_income_statement(SEPARATE_INCOME, prior=True)
+        _, prior_cumulative = alert.parse_income_statement(SEPARATE_INCOME, cumulative=True, prior=True)
+        self.assertEqual(prior_quarter['revenue'], Decimal('65.45902713'))
+        self.assertEqual(prior_cumulative['revenue'], Decimal('155.49468814'))
+        _, annual_prior = alert.parse_income_statement(ANNUAL_INCOME, prior=True)
+        self.assertEqual(annual_prior['revenue'], Decimal('1482.99673635'))
+        earnings = {'period': (2026, 3), 'consolidated': False, 'prior_quarter': prior_quarter,
+                    'prior_cumulative': prior_cumulative}
+        filled = {(2025, 3): {'revenue': Decimal(1), 'operating_profit': None, 'net_income': None}}
+
+        # WiseReport에 값이 있는 분기는 건드리지 않는다.
+        with patch.object(alert, '_fetch', side_effect=lambda *a, **k: ''):
+            fallback = alert.dart_history_fallback(earnings, {'history': filled}, None, MAIN)
+        self.assertNotIn((2025, 3), fallback)
+        merged, used = alert._merged_history({**earnings, 'history_fallback': {(2025, 3): prior_quarter}},
+                                             {'history': filled})
+        self.assertEqual(merged[(2025, 3)]['revenue'], Decimal(1))
+        self.assertEqual(used, {})
+
     def test_rejects_empty_or_foreign_currency_statements(self):
         with self.assertRaises(ValueError):
             alert.parse_income_statement(NO_CONSOLIDATED)
@@ -107,7 +127,10 @@ class PeriodicReportTest(unittest.TestCase):
         self.assertIn('매출액 : 53억', message)
         self.assertIn('최근 실적 추이(별도기준)', message)
         self.assertIn('2026.3Q 53억 / -5억 / -8억(-%)', message)
-        self.assertIn('영업익 YoY 대비 : -\n영업익 QoQ 대비 : -', message)
+        # WiseReport 없이도 전년 동기(2025.3Q)는 같은 손익계산서의 전기 3개월 열로 채운다.
+        self.assertIn('영업익 YoY 대비 : 적자지속\n영업익 QoQ 대비 : -', message)
+        self.assertIn('2025.3Q 65억 / -10억 / -12억(-%)', message)
+        self.assertIn('※ 2025.3Q: WiseReport 미제공으로 DART 공시 값 사용', message)
         self.assertEqual(alert._growth(Decimal(143), Decimal(78)), '+83%')
         self.assertEqual(alert._growth(Decimal(143), Decimal(-24)), '흑자전환')
         self.assertEqual(alert._growth(Decimal(-5), Decimal(10)), '적자전환')
