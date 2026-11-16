@@ -91,6 +91,17 @@ class PeriodicReportTest(unittest.TestCase):
         self.assertEqual(merged[(2025, 3)]['revenue'], Decimal(1))
         self.assertEqual(used, {})
 
+    def test_net_income_named_with_consolidated_word_is_recognized(self):
+        # 원익홀딩스: '분기연결순이익'처럼 기간과 순이익 사이에 '연결'이 들어간 표기
+        source = (FIXTURES / 'wonik_holdings_consolidated_income.html').read_text(encoding='utf-8')
+        _, actual = alert.parse_income_statement(source)
+        self.assertEqual(actual['net_income'], Decimal('143.09559415'))
+        net_income = dict(alert._STATEMENT_METRICS)['net_income']
+        for label in ('연결당기순이익', '반기연결순손실'):
+            self.assertIsNotNone(net_income.match(label))
+        for label in ('법인세비용차감전순이익', '분기연결총포괄손익'):
+            self.assertIsNone(net_income.match(label))
+
     def test_rejects_empty_or_foreign_currency_statements(self):
         with self.assertRaises(ValueError):
             alert.parse_income_statement(NO_CONSOLIDATED)
